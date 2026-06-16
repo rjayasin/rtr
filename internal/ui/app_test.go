@@ -229,6 +229,9 @@ func TestBrowserDownloadFlow(t *testing.T) {
 	if m.screen != screenBrowser {
 		t.Fatalf("screen = %d, want browser", m.screen)
 	}
+	if m.destInput.Value() != m.startDir {
+		t.Errorf("destination default = %q, want launch dir %q", m.destInput.Value(), m.startDir)
+	}
 	if len(m.pendingSources) != 1 || m.pendingSources[0] != "/volume1/b.txt" {
 		t.Errorf("pendingSources = %v", m.pendingSources)
 	}

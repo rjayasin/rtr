@@ -9,7 +9,6 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	cfg := Default()
 	cfg.path = path
-	cfg.DefaultLocalDir = "/downloads"
 	cfg.Rsync.Flags = []string{"-a", "--partial"}
 	cfg.Rsync.ExtraArgs = []string{"--exclude", "*.tmp"}
 	cfg.Bookmarks = []Bookmark{
@@ -23,9 +22,6 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	loaded, err := Load(path)
 	if err != nil {
 		t.Fatalf("load: %v", err)
-	}
-	if loaded.DefaultLocalDir != "/downloads" {
-		t.Errorf("DefaultLocalDir = %q", loaded.DefaultLocalDir)
 	}
 	if len(loaded.Bookmarks) != 2 {
 		t.Fatalf("bookmarks = %d, want 2", len(loaded.Bookmarks))

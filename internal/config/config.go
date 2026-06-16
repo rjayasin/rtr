@@ -58,11 +58,11 @@ type RsyncConfig struct {
 	ExtraArgs []string `toml:"extra_args"` // appended verbatim before src/dst
 }
 
-// Config is the whole persisted file.
+// Config is the whole persisted file. The default download destination is the
+// directory rtr was launched from, so it is not stored here.
 type Config struct {
-	DefaultLocalDir string      `toml:"default_local_dir"`
-	Rsync           RsyncConfig `toml:"rsync"`
-	Bookmarks       []Bookmark  `toml:"bookmarks"`
+	Rsync     RsyncConfig `toml:"rsync"`
+	Bookmarks []Bookmark  `toml:"bookmarks"`
 
 	path string // where this was loaded from; not serialized
 }
@@ -85,13 +85,7 @@ func DefaultPath() (string, error) {
 
 // Default returns a Config populated with first-run defaults.
 func Default() *Config {
-	home, _ := os.UserHomeDir()
-	dl := home
-	if dl == "" {
-		dl = "."
-	}
 	return &Config{
-		DefaultLocalDir: dl,
 		Rsync: RsyncConfig{
 			Binary: "rsync",
 			Flags:  []string{"-a", "-z", "--partial", "--human-readable"},
@@ -133,9 +127,6 @@ func (c *Config) applyDefaults() {
 	}
 	if len(c.Rsync.Flags) == 0 {
 		c.Rsync.Flags = []string{"-a", "-z", "--partial", "--human-readable"}
-	}
-	if c.DefaultLocalDir == "" {
-		c.DefaultLocalDir, _ = os.UserHomeDir()
 	}
 }
 

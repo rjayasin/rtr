@@ -140,7 +140,7 @@ func (m model) updateFileFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.pendingSources = sources
-		m.destInput.SetValue(m.cfg.DefaultLocalDir)
+		m.destInput.SetValue(m.startDir)
 		m.destInput.Focus()
 		m.destInput.CursorEnd()
 		m.destActive = true

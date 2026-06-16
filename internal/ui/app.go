@@ -6,6 +6,7 @@ package ui
 
 import (
 	"context"
+	"os"
 
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -54,6 +55,7 @@ type model struct {
 	destActive     bool
 	destInput      textinput.Model
 	pendingSources []string
+	startDir       string // working dir at launch; default download destination
 
 	// background transfers, shown stacked at the bottom of the browser
 	progress  progress.Model
@@ -73,6 +75,12 @@ func New(cfg *config.Config) model {
 	di.Prompt = "› "
 	di.CharLimit = 1024
 
+	// Default download destination: the directory rtr was launched from.
+	wd, err := os.Getwd()
+	if err != nil {
+		wd, _ = os.UserHomeDir()
+	}
+
 	return model{
 		cfg:       cfg,
 		screen:    screenBookmarks,
@@ -80,6 +88,7 @@ func New(cfg *config.Config) model {
 		spinner:   sp,
 		destInput: di,
 		progress:  progress.New(progress.WithDefaultGradient()),
+		startDir:  wd,
 	}
 }
 

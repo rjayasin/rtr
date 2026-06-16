@@ -81,9 +81,10 @@ Config lives at `$XDG_CONFIG_HOME/rtr/config.toml` (default
 `~/.config/rtr/config.toml`) and is created on first run. Bookmarks added through
 the UI are written back to it.
 
-```toml
-default_local_dir = "/Users/you/Downloads"
+Downloads default to the directory `rtr` was launched from (you can edit the
+destination in the popover before starting).
 
+```toml
 [rsync]
   binary = "rsync"
   flags  = ["-a", "-z", "--partial", "--human-readable"]
