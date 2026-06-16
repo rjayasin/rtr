@@ -135,7 +135,27 @@ func cleanupPartial(x *xfer) {
 	}
 }
 
-const xferNameWidth = 22
+// xferNameWidth is the width of the file-name column in the transfers panel. It
+// grows with the window (up to the longest label) so more of the name shows when
+// there is room, while always leaving space for the marker, bar, and stats.
+func (m model) xferNameWidth() int {
+	// reserved: marker(2) + spaces(2) + progress bar + a rate/ETA stats budget.
+	avail := m.width - m.progress.Width - 26
+	longest := 0
+	for _, x := range m.transfers {
+		if w := ansi.StringWidth(x.label); w > longest {
+			longest = w
+		}
+	}
+	w := longest
+	if w > avail {
+		w = avail
+	}
+	if w < 12 {
+		w = 12
+	}
+	return w
+}
 
 // transfersHeight is the number of terminal rows the bottom panel occupies.
 func (m model) transfersHeight() int {
@@ -161,12 +181,13 @@ func (m model) transfersView() string {
 		header = cursorStyle.Render("transfers ") + dimStyle.Render(fmt.Sprintf("(%d active)", active))
 	}
 	rows := []string{header}
+	nw := m.xferNameWidth()
 	for i, x := range m.transfers {
 		marker := "  "
 		if m.focus == focusTransfers && i == m.xferCursor {
 			marker = cursorStyle.Render("▸ ")
 		}
-		name := padRight(truncate(x.label, xferNameWidth), xferNameWidth)
+		name := padRight(truncate(x.label, nw), nw)
 		var right string
 		switch {
 		case x.cancelled:
