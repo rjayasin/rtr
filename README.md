@@ -43,9 +43,13 @@ go build -o rtr . && ./rtr
 
 ```sh
 rtr                      # launch the TUI
+rtr config               # open the config file in $EDITOR (creating it if needed)
 rtr --config ./my.toml   # use a specific config file
 rtr --config-path        # print where the config lives
 ```
+
+`rtr config` opens the file in `$EDITOR` (falling back to `$VISUAL`, then `vi`);
+multi-word values like `EDITOR="code -w"` are honored.
 
 ### Keys
 
