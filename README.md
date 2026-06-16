@@ -8,13 +8,13 @@ watching live progress while it runs.
 rtr — nas
 /volume1/media
 
-  [ ]          movies/
-  [x]   1.4G   ubuntu.iso
-▸ [ ]    812M  archive.tar.gz
+  [ ]    812M  archive.tar.gz
+▸ [ ]          movies/
   [ ]     12K  notes.txt
+  [x]   1.4G   ubuntu.iso
 
   1 selected
-↑/↓ move • → open • ← up • space select • a all • c clear • d download • r refresh • esc back
+↑/↓ move • → open • ← up • space select • a all • c clear • s sort:name • d download • r refresh • esc back
 ```
 
 ## Why
@@ -53,7 +53,7 @@ rtr --config-path        # print where the config lives
 |------------|------|
 | Bookmarks  | `↑/↓` move · `enter` connect · `n` new · `e` edit · `d` delete · `q` quit |
 | Form       | `tab`/`↑↓` change field · `enter` save · `esc` cancel |
-| Browser    | `↑/↓` move · `→`/`enter` open dir · `←` up · `space` select · `a` all · `c` clear · `d` download · `r` refresh · `esc` back |
+| Browser    | `↑/↓` move · `→`/`enter` open dir · `←` up · `space` select · `a` all · `c` clear · `s` toggle sort (name ↔ time) · `d` download · `r` refresh · `esc` back |
 | Download   | `enter` start · `esc` cancel |
 | Transfer   | `c` cancel · `enter`/`esc` back (when done) · `q` quit |
 

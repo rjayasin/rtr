@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"path"
 	"sort"
+	"time"
 
 	"github.com/pkg/sftp"
 	"github.com/rjayasin/rtr/internal/config"
@@ -12,11 +13,12 @@ import (
 
 // Entry is a single item in a remote directory listing.
 type Entry struct {
-	Name  string
-	Path  string // absolute remote path
-	IsDir bool
-	Size  int64
-	Mode  fs.FileMode
+	Name    string
+	Path    string // absolute remote path
+	IsDir   bool
+	Size    int64
+	Mode    fs.FileMode
+	ModTime time.Time
 }
 
 // Session is a live SSH+SFTP connection used to browse a remote host.
@@ -69,11 +71,12 @@ func (s *Session) List(dir string) ([]Entry, error) {
 			}
 		}
 		entries = append(entries, Entry{
-			Name:  fi.Name(),
-			Path:  path.Join(dir, fi.Name()),
-			IsDir: isDir,
-			Size:  fi.Size(),
-			Mode:  fi.Mode(),
+			Name:    fi.Name(),
+			Path:    path.Join(dir, fi.Name()),
+			IsDir:   isDir,
+			Size:    fi.Size(),
+			Mode:    fi.Mode(),
+			ModTime: fi.ModTime(),
 		})
 	}
 	sort.SliceStable(entries, func(i, j int) bool {

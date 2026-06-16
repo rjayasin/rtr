@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -82,6 +83,71 @@ func TestHandleEvent(t *testing.T) {
 	}
 	if m.tpct != 100 {
 		t.Errorf("tpct = %v, want 100 on success", m.tpct)
+	}
+}
+
+// Directories always sort ahead of files, and the chosen key/direction orders
+// each group.
+func TestSortEntries(t *testing.T) {
+	t0 := time.Unix(1000, 0)
+	mk := func(name string, dir bool, size int64, modOffset time.Duration) sshx.Entry {
+		return sshx.Entry{Name: name, IsDir: dir, Size: size, ModTime: t0.Add(modOffset)}
+	}
+	base := []sshx.Entry{
+		mk("b.txt", false, 30, 2*time.Hour),
+		mk("zdir", true, 0, 5*time.Hour),
+		mk("a.txt", false, 10, 3*time.Hour),
+		mk("adir", true, 0, 1*time.Hour),
+		mk("c.txt", false, 20, 0),
+	}
+	names := func(es []sshx.Entry) string {
+		var n []string
+		for _, e := range es {
+			n = append(n, e.Name)
+		}
+		return strings.Join(n, ",")
+	}
+	clone := func() []sshx.Entry { return append([]sshx.Entry(nil), base...) }
+
+	cases := []struct {
+		name string
+		mode sortMode
+		want string
+	}{
+		// name: all entries alphabetical, dirs and files interspersed
+		// ("a.txt" < "adir" since '.' < 'd').
+		{"name", sortName, "a.txt,adir,b.txt,c.txt,zdir"},
+		// time: newest→oldest across all entries (zdir t+5, a t+3, b t+2,
+		// adir t+1, c t+0).
+		{"time", sortTime, "zdir,a.txt,b.txt,adir,c.txt"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			es := clone()
+			sortEntries(es, tc.mode)
+			if got := names(es); got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// 's' toggles the sort mode between name and time.
+func TestSortShortcuts(t *testing.T) {
+	m := testModel()
+	m.screen = screenBrowser
+	if m.sortMode != sortName {
+		t.Fatalf("initial mode = %v, want name", m.sortMode)
+	}
+	updated, _ := m.updateBrowser(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	m = updated.(model)
+	if m.sortMode != sortTime {
+		t.Errorf("after first s, mode = %v, want time", m.sortMode)
+	}
+	updated, _ = m.updateBrowser(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	m = updated.(model)
+	if m.sortMode != sortName {
+		t.Errorf("after second s, mode = %v, want name", m.sortMode)
 	}
 }
 

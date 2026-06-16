@@ -3,10 +3,49 @@ package ui
 import (
 	"fmt"
 	"path"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/rjayasin/rtr/internal/sshx"
 )
+
+// sortMode is the remote listing order, toggled with `s`. Directories and files
+// are interspersed (sorted together by the key, not grouped by type).
+type sortMode int
+
+const (
+	sortName sortMode = iota // alphabetical
+	sortTime                 // most-recently-modified first
+)
+
+func (s sortMode) String() string {
+	if s == sortTime {
+		return "time"
+	}
+	return "name"
+}
+
+// toggled returns the other sort mode.
+func (s sortMode) toggled() sortMode {
+	if s == sortName {
+		return sortTime
+	}
+	return sortName
+}
+
+// sortEntries orders entries in place by the chosen key, with directories and
+// files interspersed (name is the tie-break for time sorting).
+func sortEntries(entries []sshx.Entry, mode sortMode) {
+	sort.SliceStable(entries, func(i, j int) bool {
+		a, b := entries[i], entries[j]
+		if mode == sortTime && !a.ModTime.Equal(b.ModTime) {
+			return a.ModTime.After(b.ModTime) // newest first
+		}
+		return strings.ToLower(a.Name) < strings.ToLower(b.Name)
+	})
+}
 
 func (m model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 	key, ok := msg.(tea.KeyMsg)
@@ -52,6 +91,9 @@ func (m model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case "c":
 		m.selected = map[string]bool{}
+	case "s":
+		m.sortMode = m.sortMode.toggled()
+		m.resort()
 	case "r":
 		return m, listCmd(m.session, m.cwd)
 	case "d":
@@ -77,6 +119,13 @@ func (m *model) toggle(p string) {
 	} else {
 		m.selected[p] = true
 	}
+}
+
+// resort re-orders the current listing for the active sort mode and returns the
+// cursor to the top.
+func (m *model) resort() {
+	sortEntries(m.entries, m.sortMode)
+	m.brCursor, m.brOffset = 0, 0
 }
 
 func (m model) current() (e entryRef, ok bool) {
@@ -180,14 +229,21 @@ func (m model) viewBrowser() string {
 	}
 
 	b.WriteString("\n")
-	n := len(m.selected)
-	status := fmt.Sprintf("%d selected", n)
+	status := fmt.Sprintf("%d selected", len(m.selected))
 	if m.err != nil {
 		status = errStyle.Render("error: ") + m.err.Error()
 	}
 	b.WriteString(dimStyle.Render(status) + "\n")
-	b.WriteString(helpStyle.Render(helpBrowser))
+	b.WriteString(helpStyle.Render(browserHelp(m.sortMode)))
 	return b.String()
+}
+
+// browserHelp renders the browser footer, reflecting the current sort so `s`
+// shows what the listing is ordered by.
+func browserHelp(mode sortMode) string {
+	return fmt.Sprintf(
+		"↑/↓ move • → open • ← up • space select • a all • c clear • s sort:%s • d download • r refresh • esc back",
+		mode)
 }
 
 func humanSize(n int64) string {

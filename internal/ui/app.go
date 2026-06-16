@@ -48,6 +48,7 @@ type model struct {
 	selected   map[string]bool
 	connecting bool
 	spinner    spinner.Model
+	sortMode   sortMode
 
 	// destination prompt
 	destInput      textinput.Model
@@ -188,6 +189,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.session = msg.session
 		m.cwd = msg.dir
 		m.entries = msg.entries
+		sortEntries(m.entries, m.sortMode)
 		m.brCursor, m.brOffset = 0, 0
 		m.connecting = false
 		m.err = nil
@@ -197,6 +199,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case listedMsg:
 		m.cwd = msg.dir
 		m.entries = msg.entries
+		sortEntries(m.entries, m.sortMode)
 		m.brCursor, m.brOffset = 0, 0
 		m.err = nil
 		return m, nil
