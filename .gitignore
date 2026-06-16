@@ -1,0 +1,9 @@
+# Compiled binary
+/rtr
+
+# Build output
+/dist/
+
+# Scratch
+*.tmp
+*.out
