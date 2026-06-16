@@ -51,23 +51,22 @@ func BuildArgs(j Job) []string {
 	}
 	args := make([]string, 0, len(flags)+len(j.Cfg.ExtraArgs)+len(j.Sources)+5)
 	args = append(args, flags...)
-	args = append(args, "--info=progress2", "--no-inc-recursive")
+	// --info=progress2 drives the progress bar; --no-inc-recursive sizes the
+	// whole transfer up front so the percentage is meaningful; -s/--secluded-args
+	// transmits remote paths to the remote rsync without a remote shell parsing
+	// them, so spaces and special characters need no quoting. rtr execs rsync
+	// directly (no local shell), so the source paths below are passed verbatim.
+	args = append(args, "--info=progress2", "--no-inc-recursive", "-s")
 	args = append(args, j.Cfg.ExtraArgs...)
 
 	if t := sshTransport(j.Bookmark); t != "" {
 		args = append(args, "-e", t)
 	}
 	for _, src := range j.Sources {
-		args = append(args, j.Bookmark.Target()+":"+quoteRemote(src))
+		args = append(args, j.Bookmark.Target()+":"+src)
 	}
 	args = append(args, j.LocalDest)
 	return args
-}
-
-// quoteRemote single-quotes a remote path so the remote shell that rsync invokes
-// treats spaces and globbing characters literally.
-func quoteRemote(p string) string {
-	return "'" + strings.ReplaceAll(p, "'", `'\''`) + "'"
 }
 
 func expandHome(p string) string {
