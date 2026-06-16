@@ -276,7 +276,7 @@ func (m model) listLines(rows int) []string {
 			check = selectedStyle.Render("[x]")
 		}
 		name := e.Name
-		size := "       "
+		size := fmt.Sprintf("%8s", "") // align with the %8s file-size column
 		if e.IsDir {
 			name = dirStyle.Render(name + "/")
 		} else {
