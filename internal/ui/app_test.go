@@ -6,11 +6,27 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/rjayasin/rtr/internal/config"
 	"github.com/rjayasin/rtr/internal/sshx"
 	"github.com/rjayasin/rtr/internal/transfer"
 )
+
+// The popover overlay must keep the base row's text to the left and right of the
+// box, so file names beside the popover remain visible.
+func TestOverlayLinePreservesSides(t *testing.T) {
+	got := ansi.Strip(overlayLine("ABCDEFGH", "XXX", 2, 3))
+	if got != "ABXXXFGH" {
+		t.Errorf("overlayLine = %q, want %q", got, "ABXXXFGH")
+	}
+
+	// A short base row is padded out to the box, then the box is placed.
+	got = ansi.Strip(overlayLine("AB", "XXX", 5, 3))
+	if got != "AB   XXX" {
+		t.Errorf("short row overlay = %q, want %q", got, "AB   XXX")
+	}
+}
 
 func testModel() model {
 	cfg := config.Default()
@@ -32,17 +48,24 @@ func TestViewsRender(t *testing.T) {
 		{Name: "file.txt", Path: "/volume1/file.txt", Size: 4096},
 	}
 	m.cwd = "/volume1"
-	m.pendingSources = []string{"/volume1/file.txt"}
 	m.form = newForm(m.cfg.Bookmarks[0], 0)
-	m.job = transfer.Job{Sources: m.pendingSources, LocalDest: "/tmp", Cfg: m.cfg.Rsync,
-		Bookmark: m.cfg.Bookmarks[0]}
 
-	for _, sc := range []screen{screenBookmarks, screenForm, screenBrowser, screenDest, screenTransfer} {
+	for _, sc := range []screen{screenBookmarks, screenForm, screenBrowser} {
 		m.screen = sc
-		out := m.View()
-		if strings.TrimSpace(out) == "" {
+		if strings.TrimSpace(m.View()) == "" {
 			t.Errorf("screen %d rendered empty", sc)
 		}
+	}
+
+	// Browser with the destination popover open and a background transfer in
+	// the bottom panel must still render and mention the file.
+	m.screen = screenBrowser
+	m.destActive = true
+	m.pendingSources = []string{"/volume1/file.txt"}
+	m.destInput.SetValue("/tmp")
+	m.transfers = []*xfer{{id: 0, label: "file.txt", dest: "/tmp", pct: 42, rate: "1MB/s"}}
+	if !strings.Contains(m.View(), "file.txt") {
+		t.Error("browser with popover/transfer should mention the file")
 	}
 }
 
@@ -59,35 +82,7 @@ func TestBookmarksToForm(t *testing.T) {
 	}
 }
 
-// A progress event should update percent and keep the loop alive (non-nil cmd);
-// a Done event should stop it (nil cmd) and mark completion.
-func TestHandleEvent(t *testing.T) {
-	m := testModel()
-	p := transfer.Progress{Percent: 42, Rate: "1.2MB/s", ETA: "0:00:05", BytesRaw: "1.2M"}
-	updated, cmd := m.handleEvent(transfer.Event{Progress: &p})
-	m = updated.(model)
-	if m.tpct != 42 {
-		t.Errorf("tpct = %v, want 42", m.tpct)
-	}
-	if cmd == nil {
-		t.Error("expected a follow-up command while transferring")
-	}
-
-	updated, cmd = m.handleEvent(transfer.Event{Done: true})
-	m = updated.(model)
-	if !m.tdone {
-		t.Error("tdone should be true after Done event")
-	}
-	if cmd != nil {
-		t.Error("no follow-up command expected after Done")
-	}
-	if m.tpct != 100 {
-		t.Errorf("tpct = %v, want 100 on success", m.tpct)
-	}
-}
-
-// Directories always sort ahead of files, and the chosen key/direction orders
-// each group.
+// Directories and files are interspersed; the chosen key orders the listing.
 func TestSortEntries(t *testing.T) {
 	t0 := time.Unix(1000, 0)
 	mk := func(name string, dir bool, size int64, modOffset time.Duration) sshx.Entry {
@@ -151,8 +146,8 @@ func TestSortShortcuts(t *testing.T) {
 	}
 }
 
-// Selecting items then choosing download routes to the destination prompt with
-// the right sources.
+// Selecting items then pressing d opens the destination popover over the browser
+// (without leaving the browser screen) with the right sources.
 func TestBrowserDownloadFlow(t *testing.T) {
 	m := testModel()
 	m.screen = screenBrowser
@@ -168,13 +163,64 @@ func TestBrowserDownloadFlow(t *testing.T) {
 	if !m.selected["/volume1/b.txt"] {
 		t.Fatal("space did not select current entry")
 	}
-	// d opens the destination prompt
+	// d opens the destination popover (still on the browser screen)
 	updated, _ = m.updateBrowser(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
 	m = updated.(model)
-	if m.screen != screenDest {
-		t.Fatalf("screen = %d, want dest", m.screen)
+	if !m.destActive {
+		t.Fatal("expected destination popover to be active")
+	}
+	if m.screen != screenBrowser {
+		t.Fatalf("screen = %d, want browser", m.screen)
 	}
 	if len(m.pendingSources) != 1 || m.pendingSources[0] != "/volume1/b.txt" {
 		t.Errorf("pendingSources = %v", m.pendingSources)
+	}
+}
+
+// handleEvent updates the matching background transfer; progress keeps the wait
+// loop alive, Done stops it and marks completion.
+func TestHandleEvent(t *testing.T) {
+	m := testModel()
+	m.transfers = []*xfer{{id: 7, label: "f"}}
+
+	p := transfer.Progress{Percent: 42, Rate: "1.2MB/s", ETA: "0:00:05", BytesRaw: "1.2M"}
+	updated, cmd := m.handleEvent(7, transfer.Event{Progress: &p})
+	m = updated.(model)
+	if x := m.findXfer(7); x == nil || x.pct != 42 {
+		t.Fatalf("progress not applied: %+v", x)
+	}
+	if cmd == nil {
+		t.Error("expected a follow-up command while transferring")
+	}
+
+	updated, cmd = m.handleEvent(7, transfer.Event{Done: true})
+	m = updated.(model)
+	if x := m.findXfer(7); x == nil || !x.done || x.pct != 100 {
+		t.Fatalf("done not applied: %+v", x)
+	}
+	if cmd != nil {
+		t.Error("no follow-up command expected after Done")
+	}
+}
+
+// Confirming the popover queues a background transfer and returns to browsing.
+func TestPopoverEnterQueuesTransfer(t *testing.T) {
+	m := testModel()
+	m.screen = screenBrowser
+	m.session = &sshx.Session{Bookmark: config.Bookmark{Host: "h", User: "me"}}
+	m.destActive = true
+	m.pendingSources = []string{"/remote/a.txt"}
+	m.destInput.SetValue(t.TempDir())
+
+	updated, cmd := m.updateBrowser(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(model)
+	if m.destActive {
+		t.Error("popover should close after enter")
+	}
+	if len(m.transfers) != 1 || m.transfers[0].label != "a.txt" {
+		t.Fatalf("transfers = %+v", m.transfers)
+	}
+	if cmd == nil {
+		t.Error("expected a start command")
 	}
 }

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"os"
 	"path"
 	"sort"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/rjayasin/rtr/internal/sshx"
+	"github.com/rjayasin/rtr/internal/transfer"
 )
 
 // sortMode is the remote listing order, toggled with `s`. Directories and files
@@ -48,15 +50,20 @@ func sortEntries(entries []sshx.Entry, mode sortMode) {
 }
 
 func (m model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.destActive {
+		return m.updateDestPopover(msg)
+	}
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return m, nil
 	}
 	switch key.String() {
 	case "ctrl+c", "q":
+		m.cancelTransfers()
 		m.closeSession()
 		return m, tea.Quit
 	case "esc":
+		m.cancelTransfers()
 		m.closeSession()
 		m.screen = screenBookmarks
 		return m, nil
@@ -96,6 +103,8 @@ func (m model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resort()
 	case "r":
 		return m, listCmd(m.session, m.cwd)
+	case "x":
+		m.clearFinished()
 	case "d":
 		sources := m.selectionOrCurrent()
 		if len(sources) == 0 {
@@ -105,12 +114,69 @@ func (m model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.destInput.SetValue(m.cfg.DefaultLocalDir)
 		m.destInput.Focus()
 		m.destInput.CursorEnd()
+		m.destActive = true
 		m.err = nil
-		m.screen = screenDest
 		return m, nil
 	}
 	m.clampScroll()
 	return m, nil
+}
+
+// updateDestPopover drives the local-destination popover. Enter queues a
+// background transfer and returns to browsing; esc dismisses the popover.
+func (m model) updateDestPopover(msg tea.Msg) (tea.Model, tea.Cmd) {
+	key, ok := msg.(tea.KeyMsg)
+	if !ok {
+		var cmd tea.Cmd
+		m.destInput, cmd = m.destInput.Update(msg)
+		return m, cmd
+	}
+	switch key.String() {
+	case "esc":
+		m.destActive = false
+		m.destInput.Blur()
+		m.err = nil
+		return m, nil
+	case "ctrl+c":
+		m.cancelTransfers()
+		m.closeSession()
+		return m, tea.Quit
+	case "enter":
+		dest := expandHomeUI(strings.TrimSpace(m.destInput.Value()))
+		if dest == "" {
+			m.err = fmt.Errorf("destination is required")
+			return m, nil
+		}
+		if err := os.MkdirAll(dest, 0o755); err != nil {
+			m.err = fmt.Errorf("create dest: %w", err)
+			return m, nil
+		}
+		id := m.nextXfer
+		m.nextXfer++
+		job := transfer.Job{
+			Bookmark:  m.session.Bookmark,
+			Sources:   m.pendingSources,
+			LocalDest: dest,
+			Cfg:       m.cfg.Rsync,
+		}
+		m.transfers = append(m.transfers, &xfer{id: id, label: transferLabel(m.pendingSources), dest: dest})
+		m.destActive = false
+		m.destInput.Blur()
+		m.selected = map[string]bool{} // ready for the next selection
+		m.err = nil
+		return m, startCmd(id, job)
+	}
+	var cmd tea.Cmd
+	m.destInput, cmd = m.destInput.Update(msg)
+	return m, cmd
+}
+
+// transferLabel names a queued download for the panel.
+func transferLabel(sources []string) string {
+	if len(sources) == 1 {
+		return path.Base(sources[0])
+	}
+	return fmt.Sprintf("%d items", len(sources))
 }
 
 func (m *model) toggle(p string) {
@@ -183,30 +249,25 @@ func (m *model) clampScroll() {
 }
 
 func (m model) visibleRows() int {
-	// title(2) + breadcrumb(2) + footer(3) chrome.
-	r := m.height - 7
+	// chrome: title + breadcrumb + blank + status + footer = 5 lines, plus the
+	// bottom transfers panel.
+	r := m.height - 5 - m.transfersHeight()
 	if r < 3 {
 		r = 3
 	}
 	return r
 }
 
-func (m model) viewBrowser() string {
-	var b strings.Builder
-	label := ""
-	if m.session != nil {
-		label = m.session.Bookmark.Label()
+// listLines renders exactly rows lines of the directory listing (padded with
+// blanks), so the status/panel/footer stay pinned to the bottom of the window.
+func (m model) listLines(rows int) []string {
+	out := make([]string, 0, rows)
+	if len(m.entries) == 0 {
+		out = append(out, dimStyle.Render("(empty directory)"))
 	}
-	b.WriteString(titleStyle.Render("rtr — "+label) + "\n")
-	b.WriteString(pathStyle.Render(m.cwd) + "\n\n")
-
-	rows := m.visibleRows()
 	end := m.brOffset + rows
 	if end > len(m.entries) {
 		end = len(m.entries)
-	}
-	if len(m.entries) == 0 {
-		b.WriteString(dimStyle.Render("(empty directory)") + "\n")
 	}
 	for i := m.brOffset; i < end; i++ {
 		e := m.entries[i]
@@ -225,25 +286,55 @@ func (m model) viewBrowser() string {
 		if i == m.brCursor {
 			cursor = cursorStyle.Render("▸ ")
 		}
-		b.WriteString(fmt.Sprintf("%s%s %s  %s\n", cursor, check, size, name))
+		out = append(out, fmt.Sprintf("%s%s %s  %s", cursor, check, size, name))
+	}
+	for len(out) < rows {
+		out = append(out, "")
+	}
+	return out[:rows]
+}
+
+func (m model) viewBrowser() string {
+	label := ""
+	if m.session != nil {
+		label = m.session.Bookmark.Label()
 	}
 
-	b.WriteString("\n")
+	lines := []string{
+		titleStyle.Render("rtr — " + label),
+		pathStyle.Render(m.cwd),
+		"",
+	}
+
+	listLines := m.listLines(m.visibleRows())
+	if m.destActive {
+		listLines = overlayCenter(listLines, m.destPopover(), max(m.width, 1))
+	}
+	lines = append(lines, listLines...)
+
 	status := fmt.Sprintf("%d selected", len(m.selected))
-	if m.err != nil {
+	if m.err != nil && !m.destActive {
 		status = errStyle.Render("error: ") + m.err.Error()
 	}
-	b.WriteString(dimStyle.Render(status) + "\n")
-	b.WriteString(helpStyle.Render(browserHelp(m.sortMode)))
-	return b.String()
+	lines = append(lines, dimStyle.Render(status))
+
+	if panel := m.transfersView(); panel != "" {
+		lines = append(lines, strings.Split(panel, "\n")...)
+	}
+	lines = append(lines, helpStyle.Render(browserHelp(m.sortMode, len(m.transfers) > 0)))
+	return strings.Join(lines, "\n")
 }
 
 // browserHelp renders the browser footer, reflecting the current sort so `s`
 // shows what the listing is ordered by.
-func browserHelp(mode sortMode) string {
-	return fmt.Sprintf(
-		"↑/↓ move • → open • ← up • space select • a all • c clear • s sort:%s • d download • r refresh • esc back",
+func browserHelp(mode sortMode, hasTransfers bool) string {
+	h := fmt.Sprintf(
+		"↑/↓ move • → open • ← up • space select • d download • s sort:%s • a all • c clear • r refresh • esc back",
 		mode)
+	if hasTransfers {
+		h += " • x clear done"
+	}
+	return h
 }
 
 func humanSize(n int64) string {

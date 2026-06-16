@@ -5,6 +5,4 @@ package ui
 const (
 	helpBookmarks = "↑/↓ move • enter connect • n new • e edit • d delete • q quit"
 	helpForm      = "tab/↑↓ field • enter save • esc cancel"
-	helpDest      = "enter start • esc cancel"
-	helpTransfer  = "c cancel • enter/esc back when done • q quit"
 )

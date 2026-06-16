@@ -1,8 +1,9 @@
 # rtr
 
 A terminal UI download client. Bookmark remote SSH hosts, browse their
-directories over SFTP, pick files or folders, and pull them down with `rsync` —
-watching live progress while it runs.
+directories over SFTP, pick files or folders, and pull them down with `rsync`.
+Downloads run in the background — start as many as you like and keep browsing
+while their progress bars stack at the bottom of the window.
 
 ```
 rtr — nas
@@ -13,9 +14,15 @@ rtr — nas
   [ ]     12K  notes.txt
   [x]   1.4G   ubuntu.iso
 
-  1 selected
-↑/↓ move • → open • ← up • space select • a all • c clear • s sort:name • d download • r refresh • esc back
+1 selected
+transfers (1 active)
+ubuntu.iso             ███████████░░░░░░░░░░░  47% 3.2MB/s ETA 0:00:08
+archive.tar.gz         ✓ → /Users/you/Downloads
+↑/↓ move • → open • ← up • space select • d download • s sort:name • … • x clear done
 ```
+
+Pressing `d` opens a destination popover *over* the file list; hit `enter` and
+the download starts in the background while you keep browsing.
 
 ## Why
 
@@ -57,11 +64,12 @@ multi-word values like `EDITOR="code -w"` are honored.
 |------------|------|
 | Bookmarks  | `↑/↓` move · `enter` connect · `n` new · `e` edit · `d` delete · `q` quit |
 | Form       | `tab`/`↑↓` change field · `enter` save · `esc` cancel |
-| Browser    | `↑/↓` move · `→`/`enter` open dir · `←` up · `space` select · `a` all · `c` clear · `s` toggle sort (name ↔ time) · `d` download · `r` refresh · `esc` back |
-| Download   | `enter` start · `esc` cancel |
-| Transfer   | `c` cancel · `enter`/`esc` back (when done) · `q` quit |
+| Browser    | `↑/↓` move · `→`/`enter` open dir · `←` up · `space` select · `a` all · `c` clear · `s` toggle sort (name ↔ time) · `d` download · `x` clear finished transfers · `r` refresh · `esc` back |
+| Download popover | `enter` start (in background) · `esc` cancel |
 
-If no items are checked, `d` downloads the entry under the cursor.
+If no items are checked, `d` downloads the entry under the cursor. Each `enter`
+queues another background transfer; they run in parallel and show in the bottom
+panel. `x` removes finished ones.
 
 ## Configuration
 
@@ -133,7 +141,7 @@ main.go                    entrypoint & flags
 internal/config            TOML config + bookmarks
 internal/sshx              SSH dial (agent/key/jump/known_hosts) + SFTP browsing
 internal/transfer          rsync arg building, spawn, --info=progress2 parsing
-internal/ui                Bubble Tea screens: bookmarks · browser · transfer
+internal/ui                Bubble Tea: bookmarks, browser (with dest popover + background transfers panel)
 ```
 
 Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea),

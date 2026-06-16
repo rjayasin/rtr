@@ -23,8 +23,6 @@ const (
 	screenBookmarks screen = iota
 	screenForm
 	screenBrowser
-	screenDest
-	screenTransfer
 )
 
 type model struct {
@@ -50,22 +48,15 @@ type model struct {
 	spinner    spinner.Model
 	sortMode   sortMode
 
-	// destination prompt
+	// destination popover (overlaid on the browser)
+	destActive     bool
 	destInput      textinput.Model
 	pendingSources []string
 
-	// transfer
-	progress progress.Model
-	job      transfer.Job
-	evCh     <-chan transfer.Event
-	cancel   context.CancelFunc
-	tlog     []string
-	tpct     float64
-	trate    string
-	teta     string
-	tbytes   string
-	tdone    bool
-	terr     error
+	// background transfers, shown stacked at the bottom of the browser
+	progress  progress.Model
+	transfers []*xfer
+	nextXfer  int
 
 	status string
 	err    error
@@ -104,12 +95,15 @@ type listedMsg struct {
 }
 
 type startedMsg struct {
+	id     int
 	ch     <-chan transfer.Event
 	cancel context.CancelFunc
-	job    transfer.Job
 }
 
-type evMsg struct{ ev transfer.Event }
+type evMsg struct {
+	id int
+	ev transfer.Event
+}
 
 type errMsg struct{ err error }
 
@@ -141,25 +135,25 @@ func listCmd(s *sshx.Session, dir string) tea.Cmd {
 	}
 }
 
-func startCmd(job transfer.Job) tea.Cmd {
+func startCmd(id int, job transfer.Job) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithCancel(context.Background())
 		ch, err := transfer.Start(ctx, job)
 		if err != nil {
 			cancel()
-			return errMsg{err}
+			return evMsg{id: id, ev: transfer.Event{Done: true, Err: err}}
 		}
-		return startedMsg{ch: ch, cancel: cancel, job: job}
+		return startedMsg{id: id, ch: ch, cancel: cancel}
 	}
 }
 
-func waitEvCmd(ch <-chan transfer.Event) tea.Cmd {
+func waitEvCmd(id int, ch <-chan transfer.Event) tea.Cmd {
 	return func() tea.Msg {
 		ev, ok := <-ch
 		if !ok {
-			return evMsg{ev: transfer.Event{Done: true}}
+			return evMsg{id: id, ev: transfer.Event{Done: true}}
 		}
-		return evMsg{ev: ev}
+		return evMsg{id: id, ev: ev}
 	}
 }
 
@@ -171,8 +165,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.progress.Width = clamp(msg.Width-4, 10, 80)
-		m.destInput.Width = clamp(msg.Width-6, 10, 100)
+		m.progress.Width = clamp(msg.Width/3, 16, 36) // compact inline bars
+		m.destInput.Width = clamp(msg.Width/2, 10, 60)
 		return m, nil
 
 	case spinner.TickMsg:
@@ -205,17 +199,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case startedMsg:
-		m.evCh = msg.ch
-		m.cancel = msg.cancel
-		m.job = msg.job
-		m.tdone = false
-		m.terr = nil
-		m.tpct = 0
-		m.tlog = nil
-		return m, waitEvCmd(m.evCh)
+		if x := m.findXfer(msg.id); x != nil {
+			x.ch = msg.ch
+			x.cancel = msg.cancel
+			return m, waitEvCmd(msg.id, msg.ch)
+		}
+		msg.cancel() // transfer was cleared before it started; stop the process
+		return m, nil
 
 	case evMsg:
-		return m.handleEvent(msg.ev)
+		return m.handleEvent(msg.id, msg.ev)
 	}
 
 	// Screen-specific key handling.
@@ -226,10 +219,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateForm(msg)
 	case screenBrowser:
 		return m.updateBrowser(msg)
-	case screenDest:
-		return m.updateDest(msg)
-	case screenTransfer:
-		return m.updateTransfer(msg)
 	}
 	return m, nil
 }
@@ -242,10 +231,6 @@ func (m model) View() string {
 		return m.viewForm()
 	case screenBrowser:
 		return m.viewBrowser()
-	case screenDest:
-		return m.viewDest()
-	case screenTransfer:
-		return m.viewTransfer()
 	}
 	return ""
 }
