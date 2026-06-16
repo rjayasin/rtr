@@ -1,5 +1,7 @@
 # rtr
 
+[![CI](https://github.com/rjayasin/rtr/actions/workflows/ci.yml/badge.svg)](https://github.com/rjayasin/rtr/actions/workflows/ci.yml)
+
 A terminal UI download client. Bookmark remote SSH hosts, browse their
 directories over SFTP, pick files or folders, and pull them down with `rsync`.
 Downloads run in the background — start as many as you like and keep browsing
