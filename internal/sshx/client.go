@@ -62,7 +62,10 @@ func resolveAlias(b config.Bookmark) config.Bookmark {
 		}
 	}
 	if b.Identity == "" {
-		if id, _ := ssh_config.GetStrict(alias, "IdentityFile"); id != "" {
+		// GetStrict returns the library default ("~/.ssh/identity") when the host
+		// has no explicit IdentityFile; ignore that so the default-key scan in
+		// authMethods still runs.
+		if id, _ := ssh_config.GetStrict(alias, "IdentityFile"); id != "" && id != ssh_config.Default("IdentityFile") {
 			b.Identity = id
 		}
 	}
@@ -92,19 +95,26 @@ func authMethods(b config.Bookmark) []ssh.AuthMethod {
 			methods = append(methods, ssh.PublicKeysCallback(agent.NewClient(conn).Signers))
 		}
 	}
-	if b.Identity != "" {
-		if m, err := keyAuth(b.Identity); err == nil {
+	seen := map[string]bool{}
+	addKey := func(path string) {
+		p := expandHome(path)
+		if p == "" || seen[p] {
+			return
+		}
+		seen[p] = true
+		if _, err := os.Stat(p); err != nil {
+			return
+		}
+		if m, err := keyAuth(p); err == nil {
 			methods = append(methods, m)
 		}
-	} else {
-		for _, name := range []string{"id_ed25519", "id_ecdsa", "id_rsa"} {
-			p := filepath.Join(homeDir(), ".ssh", name)
-			if _, err := os.Stat(p); err == nil {
-				if m, err := keyAuth(p); err == nil {
-					methods = append(methods, m)
-				}
-			}
-		}
+	}
+	// Try an explicitly configured identity first, then always fall back to the
+	// usual default key names (so a missing/bogus identity never leaves us with
+	// no methods when an unencrypted default key is present).
+	addKey(b.Identity)
+	for _, name := range []string{"id_ed25519", "id_ecdsa", "id_rsa"} {
+		addKey(filepath.Join(homeDir(), ".ssh", name))
 	}
 	return methods
 }
