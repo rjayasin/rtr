@@ -7,6 +7,7 @@ package ui
 import (
 	"context"
 	"os"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -57,10 +58,12 @@ type model struct {
 	pendingSources []string
 	startDir       string // working dir at launch; default download destination
 
-	// background transfers, shown stacked at the bottom of the browser
-	progress  progress.Model
-	transfers []*xfer
-	nextXfer  int
+	// background transfers, shown stacked at the bottom of every screen
+	progress      progress.Model
+	transfers     []*xfer
+	nextXfer      int
+	transfersPath string // resume file (transfers.json beside the config)
+	confirmQuit   bool   // showing the "quit with downloads running?" prompt
 
 	status string
 	err    error
@@ -81,15 +84,32 @@ func New(cfg *config.Config) model {
 		wd, _ = os.UserHomeDir()
 	}
 
-	return model{
-		cfg:       cfg,
-		screen:    screenBookmarks,
-		selected:  map[string]bool{},
-		spinner:   sp,
-		destInput: di,
-		progress:  progress.New(progress.WithDefaultGradient()),
-		startDir:  wd,
+	m := model{
+		cfg:           cfg,
+		screen:        screenBookmarks,
+		selected:      map[string]bool{},
+		spinner:       sp,
+		destInput:     di,
+		progress:      progress.New(progress.WithDefaultGradient()),
+		startDir:      wd,
+		transfersPath: config.TransfersPath(cfg.Path()),
 	}
+
+	// Restore any transfers that were still running when rtr last exited; they
+	// are restarted (and resumed) by Init.
+	if pend, err := config.LoadPendingTransfers(m.transfersPath); err == nil {
+		for _, p := range pend {
+			m.transfers = append(m.transfers, &xfer{
+				id:       m.nextXfer,
+				label:    transferLabel(p.Sources),
+				dest:     p.Dest,
+				bookmark: p.Bookmark,
+				sources:  p.Sources,
+			})
+			m.nextXfer++
+		}
+	}
+	return m
 }
 
 // ── Messages ────────────────────────────────────────────────────────
@@ -170,7 +190,13 @@ func waitEvCmd(id int, ch <-chan transfer.Event) tea.Cmd {
 
 // ── tea.Model ───────────────────────────────────────────────────────
 
-func (m model) Init() tea.Cmd { return m.spinner.Tick }
+func (m model) Init() tea.Cmd {
+	cmds := []tea.Cmd{m.spinner.Tick}
+	for _, x := range m.transfers { // resume transfers restored in New
+		cmds = append(cmds, startCmd(x.id, x.job(m.cfg.Rsync)))
+	}
+	return tea.Batch(cmds...)
+}
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -222,6 +248,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleEvent(msg.id, msg.ev)
 	}
 
+	// Global key handling (quit/confirm and the transfers panel) runs before the
+	// screen handlers so it works on any screen.
+	if key, ok := msg.(tea.KeyMsg); ok {
+		if nm, cmd, handled := m.handleGlobalKey(key); handled {
+			return nm, cmd
+		}
+	}
+
 	// Screen-specific key handling.
 	switch m.screen {
 	case screenBookmarks:
@@ -234,16 +268,72 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleGlobalKey processes keys that apply regardless of the current screen:
+// quit/quit-confirmation and the background-transfers panel (focus toggle and
+// its actions). It returns handled=false to let the focused screen handle the
+// key. It is skipped for text-entry contexts except for Ctrl+C, which always
+// requests quit.
+func (m model) handleGlobalKey(key tea.KeyMsg) (model, tea.Cmd, bool) {
+	ks := key.String()
+	textMode := m.screen == screenForm || m.destActive
+
+	if m.confirmQuit {
+		switch ks {
+		case "y", "Y":
+			m.cancelTransfers()
+			return m, tea.Quit, true
+		case "n", "N", "esc", "q", "ctrl+c":
+			m.confirmQuit = false
+			return m, nil, true
+		default:
+			return m, nil, true // ignore other keys while confirming
+		}
+	}
+
+	if ks == "ctrl+c" || (ks == "q" && !textMode) {
+		if m.activeTransfers() > 0 {
+			m.confirmQuit = true
+			return m, nil, true
+		}
+		m.cancelTransfers()
+		return m, tea.Quit, true
+	}
+
+	if textMode {
+		return m, nil, false
+	}
+
+	if ks == "t" && len(m.transfers) > 0 {
+		if m.focus == focusFiles {
+			m.focus = focusTransfers
+			m.clampXferCursor()
+		} else {
+			m.focus = focusFiles
+		}
+		return m, nil, true
+	}
+	if m.focus == focusTransfers {
+		nm, cmd := m.updateTransferFocus(key)
+		return nm.(model), cmd, true
+	}
+	return m, nil, false
+}
+
 func (m model) View() string {
+	var v string
 	switch m.screen {
 	case screenBookmarks:
-		return m.viewBookmarks()
+		v = m.viewBookmarks()
 	case screenForm:
-		return m.viewForm()
+		v = m.viewForm()
 	case screenBrowser:
-		return m.viewBrowser()
+		v = m.viewBrowser()
 	}
-	return ""
+	if m.confirmQuit {
+		lines := overlayCenter(strings.Split(v, "\n"), m.quitConfirmBox(), max(m.width, 1))
+		v = strings.Join(lines, "\n")
+	}
+	return v
 }
 
 // Run launches the rtr TUI against the given config and blocks until exit.

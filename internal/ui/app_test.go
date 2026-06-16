@@ -53,6 +53,7 @@ func TestCancelCleanup(t *testing.T) {
 }
 
 // Pressing c on a highlighted running transfer cancels it and marks it cancelled.
+// Routed through Update, since transfer-focus handling is global.
 func TestTransferFocusCancel(t *testing.T) {
 	m := testModel()
 	m.screen = screenBrowser
@@ -60,13 +61,79 @@ func TestTransferFocusCancel(t *testing.T) {
 	cancelled := false
 	m.transfers = []*xfer{{id: 0, label: "f", cancel: func() { cancelled = true }}}
 
-	updated, _ := m.updateBrowser(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
 	m = updated.(model)
 	if !cancelled {
 		t.Error("cancel func should have been called")
 	}
 	if !m.transfers[0].cancelled {
 		t.Error("transfer should be marked cancelled")
+	}
+}
+
+// Quitting with a running download asks for confirmation rather than quitting;
+// y confirms, n dismisses.
+func TestQuitConfirmation(t *testing.T) {
+	m := testModel()
+	m.screen = screenBrowser
+	m.transfers = []*xfer{{id: 0, label: "f", cancel: func() {}}}
+
+	press := func(r rune) tea.Cmd {
+		updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = updated.(model)
+		return cmd
+	}
+
+	// q with an active transfer -> confirmation prompt, no quit command.
+	if cmd := press('q'); cmd != nil || !m.confirmQuit {
+		t.Fatalf("q should prompt, not quit (confirmQuit=%v, cmd=%v)", m.confirmQuit, cmd)
+	}
+	// n dismisses.
+	press('n')
+	if m.confirmQuit {
+		t.Error("n should dismiss the prompt")
+	}
+	// q again, then y -> quit command issued.
+	press('q')
+	if !m.confirmQuit {
+		t.Fatal("q should re-arm the prompt")
+	}
+	if cmd := press('y'); cmd == nil {
+		t.Error("y should issue a quit command")
+	}
+}
+
+// With no active transfers, q quits immediately (no confirmation).
+func TestQuitNoTransfers(t *testing.T) {
+	m := testModel()
+	m.screen = screenBrowser
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	if cmd == nil {
+		t.Error("q should quit immediately when nothing is running")
+	}
+}
+
+// New restores transfers from the resume file; Init restarts them.
+func TestResumeRestoresTransfers(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	cfg, err := config.Load(cfgPath) // creates + sets path
+	if err != nil {
+		t.Fatal(err)
+	}
+	pend := []config.PendingTransfer{
+		{Bookmark: config.Bookmark{Host: "h", User: "me"}, Sources: []string{"/r/a.txt"}, Dest: dir},
+	}
+	if err := config.SavePendingTransfers(config.TransfersPath(cfgPath), pend); err != nil {
+		t.Fatal(err)
+	}
+
+	m := New(cfg)
+	if len(m.transfers) != 1 || m.transfers[0].label != "a.txt" {
+		t.Fatalf("restored transfers = %+v", m.transfers)
+	}
+	if cmd := m.Init(); cmd == nil {
+		t.Error("Init should return commands to restart resumed transfers")
 	}
 }
 

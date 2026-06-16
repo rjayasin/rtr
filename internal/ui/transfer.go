@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/rjayasin/rtr/internal/config"
 	"github.com/rjayasin/rtr/internal/transfer"
 )
 
@@ -21,6 +22,8 @@ type xfer struct {
 	id        int
 	label     string // file name, or "N items"
 	dest      string
+	bookmark  config.Bookmark // for persistence / auto-resume
+	sources   []string        // remote source paths
 	pct       float64
 	rate      string
 	eta       string
@@ -36,6 +39,35 @@ type xfer struct {
 	// destination entries this job newly created, plus rsync temp-file globs.
 	cleanupRemove []string
 	cleanupGlobs  []string
+}
+
+// job builds the rsync job for this transfer.
+func (x *xfer) job(rc config.RsyncConfig) transfer.Job {
+	return transfer.Job{Bookmark: x.bookmark, Sources: x.sources, LocalDest: x.dest, Cfg: rc}
+}
+
+// activeTransfers counts downloads that are still running (not done/cancelled).
+func (m model) activeTransfers() int {
+	n := 0
+	for _, x := range m.transfers {
+		if !x.done && !x.cancelled {
+			n++
+		}
+	}
+	return n
+}
+
+// persistTransfers writes the still-running transfers to the resume file so they
+// can be restarted on the next launch (and clears it when none remain).
+func (m model) persistTransfers() {
+	var pend []config.PendingTransfer
+	for _, x := range m.transfers {
+		if x.done || x.cancelled {
+			continue
+		}
+		pend = append(pend, config.PendingTransfer{Bookmark: x.bookmark, Sources: x.sources, Dest: x.dest})
+	}
+	_ = config.SavePendingTransfers(m.transfersPath, pend)
 }
 
 func (m model) findXfer(id int) *xfer {
@@ -92,6 +124,7 @@ func (m model) handleEvent(id int, ev transfer.Event) (tea.Model, tea.Cmd) {
 			// files it left behind.
 			cleanupPartial(x)
 		}
+		m.persistTransfers() // drop the finished transfer from the resume file
 		return m, nil
 	case ev.Progress != nil:
 		x.pct = ev.Progress.Percent
@@ -217,6 +250,17 @@ func (m model) transfersView() string {
 		rows = append(rows, marker+name+" "+right)
 	}
 	return strings.Join(rows, "\n")
+}
+
+// quitConfirmBox renders the "downloads in progress — quit anyway?" prompt.
+func (m model) quitConfirmBox() string {
+	inner := strings.Join([]string{
+		errStyle.Render("Downloads in progress"),
+		fmt.Sprintf("%d still running — they will resume next launch.", m.activeTransfers()),
+		"",
+		"Quit anyway?  " + helpStyle.Render("y / n"),
+	}, "\n")
+	return boxStyle.Width(clamp(m.width-8, 30, 56)).Render(inner)
 }
 
 // destPopover renders the local-destination prompt as a bordered box that is

@@ -61,39 +61,21 @@ func (m model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.destActive {
 		return m.updateDestPopover(msg)
 	}
-	key, ok := msg.(tea.KeyMsg)
-	if !ok {
-		return m, nil
+	if key, ok := msg.(tea.KeyMsg); ok {
+		return m.updateFileFocus(key)
 	}
-	switch key.String() {
-	case "ctrl+c", "q":
-		m.cancelTransfers()
-		m.closeSession()
-		return m, tea.Quit
-	case "t":
-		// Toggle scroll focus between the file list and the transfers panel.
-		if len(m.transfers) > 0 {
-			if m.focus == focusFiles {
-				m.focus = focusTransfers
-				m.clampXferCursor()
-			} else {
-				m.focus = focusFiles
-			}
-		}
-		return m, nil
-	}
-	if m.focus == focusTransfers {
-		return m.updateTransferFocus(key)
-	}
-	return m.updateFileFocus(key)
+	return m, nil
 }
 
-// updateFileFocus handles keys while the file list has scroll focus.
+// updateFileFocus handles keys while the file list has scroll focus. Quit, the
+// transfers panel, and the `t` toggle are handled globally in handleGlobalKey.
 func (m model) updateFileFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case "esc":
-		m.cancelTransfers()
+		// Leave the browser but keep downloads running (they show on the
+		// bookmarks screen and resume on the next launch).
 		m.closeSession()
+		m.focus = focusFiles
 		m.screen = screenBookmarks
 		return m, nil
 	case "up", "k":
@@ -175,6 +157,7 @@ func (m model) updateTransferFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			x.cancel()
 			x.cancel = nil
 			x.cancelled = true
+			m.persistTransfers()
 		}
 	case "x":
 		m.clearFinished()
@@ -210,10 +193,6 @@ func (m model) updateDestPopover(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.destInput.Blur()
 		m.err = nil
 		return m, nil
-	case "ctrl+c":
-		m.cancelTransfers()
-		m.closeSession()
-		return m, tea.Quit
 	case "enter":
 		dest := expandHomeUI(strings.TrimSpace(m.destInput.Value()))
 		if dest == "" {
@@ -237,6 +216,8 @@ func (m model) updateDestPopover(msg tea.Msg) (tea.Model, tea.Cmd) {
 			id:            id,
 			label:         transferLabel(m.pendingSources),
 			dest:          dest,
+			bookmark:      m.session.Bookmark,
+			sources:       m.pendingSources,
 			cleanupRemove: remove,
 			cleanupGlobs:  globs,
 		})
@@ -244,6 +225,7 @@ func (m model) updateDestPopover(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.destInput.Blur()
 		m.selected = map[string]bool{} // ready for the next selection
 		m.err = nil
+		m.persistTransfers()
 		return m, startCmd(id, job)
 	}
 	var cmd tea.Cmd
@@ -406,7 +388,10 @@ func (m model) viewBrowser() string {
 		lines = append(lines, dividerLine(m.width)) // separate files from transfers
 		lines = append(lines, strings.Split(panel, "\n")...)
 	}
-	lines = append(lines, helpStyle.Render(m.footer()))
+	browserHelp := fmt.Sprintf(
+		"↑/↓ move • → open • ← up • space select • d download • s sort:%s • a all • c clear • r refresh • esc back",
+		m.sortMode)
+	lines = append(lines, helpStyle.Render(m.footer(browserHelp)))
 	return strings.Join(lines, "\n")
 }
 
@@ -417,19 +402,16 @@ func dividerLine(w int) string {
 	return dimStyle.Render(strings.Repeat("─", w))
 }
 
-// footer renders the help line for the focused pane; the file footer reflects
-// the current sort so `s` shows what the listing is ordered by.
-func (m model) footer() string {
+// footer renders the help line: the transfers-panel keys when that pane is
+// focused, otherwise the given screen help plus a hint to reach the panel.
+func (m model) footer(baseHelp string) string {
 	if m.focus == focusTransfers {
 		return "↑/↓ select • c cancel • x clear done • t/esc files • q quit"
 	}
-	h := fmt.Sprintf(
-		"↑/↓ move • → open • ← up • space select • d download • s sort:%s • a all • c clear • r refresh • esc back",
-		m.sortMode)
 	if len(m.transfers) > 0 {
-		h += " • t transfers"
+		return baseHelp + " • t transfers"
 	}
-	return h
+	return baseHelp
 }
 
 func humanSize(n int64) string {

@@ -67,15 +67,25 @@ multi-word values like `EDITOR="code -w"` are honored.
 
 | Screen     | Keys |
 |------------|------|
-| Bookmarks  | `↑/↓` move · `enter` connect · `n` new · `e` edit · `d` delete · `q` quit |
+| Bookmarks  | `↑/↓` move · `enter` connect · `n` new · `e` edit · `d` delete · `t` focus transfers · `q` quit |
 | Form       | `tab`/`↑↓` change field · `enter` save · `esc` cancel |
 | Browser (files) | `↑/↓` move · `→`/`enter` open dir · `←` up · `space` select · `a` all · `c` clear · `s` toggle sort (name ↔ time) · `d` download · `t` focus transfers · `r` refresh · `esc` back |
-| Browser (transfers) | `↑/↓` select · `c` cancel highlighted · `x` clear finished · `t`/`esc` back to files |
+| Transfers panel (`t`) | `↑/↓` select · `c` cancel highlighted · `x` clear finished · `t`/`esc` back |
 | Download popover | `enter` start (in background) · `esc` cancel |
 
 If no items are checked, `d` downloads the entry under the cursor. Each `enter`
-queues another background transfer; they run in parallel and show in the bottom
-panel. `x` removes finished ones.
+queues another background transfer; they run in parallel in the bottom panel,
+which is shown on every screen. Press `t` to scroll into the panel and `c` to
+cancel the highlighted download (which removes its partial files); `x` clears
+finished ones.
+
+### Resuming and quitting
+
+In-progress downloads are recorded in `transfers.json` (beside the config). If
+you quit — or rtr is interrupted — **they are restarted and resumed on the next
+launch** (rsync's `--partial`/`--append-verify` continue where they left off, so
+nothing is re-downloaded). Quitting while a download is running first asks for
+confirmation.
 
 ## Configuration
 

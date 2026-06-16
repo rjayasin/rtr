@@ -19,8 +19,6 @@ func (m model) updateBookmarks(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch key.String() {
-	case "ctrl+c", "q":
-		return m, tea.Quit
 	case "up", "k":
 		if m.bmCursor > 0 {
 			m.bmCursor--
@@ -71,7 +69,7 @@ func (m model) viewBookmarks() string {
 	for i, bm := range m.cfg.Bookmarks {
 		cursor := "  "
 		line := fmt.Sprintf("%-22s %s", bm.Label(), dimStyle.Render(bm.Target()+":"+orDefault(bm.RemotePath, "~")))
-		if i == m.bmCursor {
+		if i == m.bmCursor && m.focus == focusFiles {
 			cursor = cursorStyle.Render("▸ ")
 			line = cursorStyle.Render(fmt.Sprintf("%-22s ", bm.Label())) + dimStyle.Render(bm.Target()+":"+orDefault(bm.RemotePath, "~"))
 		}
@@ -85,7 +83,10 @@ func (m model) viewBookmarks() string {
 	if m.err != nil {
 		b.WriteString(errStyle.Render("error: ") + m.err.Error() + "\n")
 	}
-	b.WriteString("\n" + helpStyle.Render(helpBookmarks))
+	if panel := m.transfersView(); panel != "" {
+		b.WriteString(dividerLine(m.width) + "\n" + panel + "\n")
+	}
+	b.WriteString("\n" + helpStyle.Render(m.footer(helpBookmarks)))
 	return b.String()
 }
 
