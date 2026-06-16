@@ -2,8 +2,11 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"path"
+	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -15,18 +18,24 @@ import (
 
 // xfer is the live state of one background download, shown in the bottom panel.
 type xfer struct {
-	id     int
-	label  string // file name, or "N items"
-	dest   string
-	pct    float64
-	rate   string
-	eta    string
-	bytes  string
-	last   string // last raw output line, used for error context
-	done   bool
-	err    error
-	ch     <-chan transfer.Event
-	cancel context.CancelFunc
+	id        int
+	label     string // file name, or "N items"
+	dest      string
+	pct       float64
+	rate      string
+	eta       string
+	bytes     string
+	last      string // last raw output line, used for error context
+	done      bool
+	cancelled bool // user-cancelled (shown distinctly from a real error)
+	err       error
+	ch        <-chan transfer.Event
+	cancel    context.CancelFunc
+
+	// partial-file cleanup, applied only when the user cancels: top-level
+	// destination entries this job newly created, plus rsync temp-file globs.
+	cleanupRemove []string
+	cleanupGlobs  []string
 }
 
 func (m model) findXfer(id int) *xfer {
@@ -49,11 +58,11 @@ func (m *model) cancelTransfers() {
 	m.transfers = nil
 }
 
-// clearFinished drops completed transfers from the panel, leaving running ones.
+// clearFinished drops completed or cancelled transfers, leaving running ones.
 func (m *model) clearFinished() {
 	kept := m.transfers[:0]
 	for _, x := range m.transfers {
-		if !x.done {
+		if !x.done && !x.cancelled {
 			kept = append(kept, x)
 		}
 	}
@@ -78,6 +87,11 @@ func (m model) handleEvent(id int, ev transfer.Event) (tea.Model, tea.Cmd) {
 			x.cancel()
 			x.cancel = nil
 		}
+		if x.cancelled {
+			// The process has now exited, so it is safe to remove the partial
+			// files it left behind.
+			cleanupPartial(x)
+		}
 		return m, nil
 	case ev.Progress != nil:
 		x.pct = ev.Progress.Percent
@@ -90,6 +104,34 @@ func (m model) handleEvent(id int, ev transfer.Event) (tea.Model, tea.Cmd) {
 			x.last = ev.Line
 		}
 		return m, waitEvCmd(id, x.ch)
+	}
+}
+
+// cleanupTargets computes what to delete if a download is cancelled: the
+// top-level destination entries that did not already exist (so a pre-existing
+// local file is never destroyed), plus rsync's temp-file glob for each source.
+func cleanupTargets(dest string, sources []string) (remove, globs []string) {
+	for _, s := range sources {
+		base := path.Base(s)
+		target := filepath.Join(dest, base)
+		if _, err := os.Stat(target); errors.Is(err, os.ErrNotExist) {
+			remove = append(remove, target)
+		}
+		globs = append(globs, filepath.Join(dest, "."+base+".??????"))
+	}
+	return remove, globs
+}
+
+// cleanupPartial removes the partial files left by a cancelled transfer.
+func cleanupPartial(x *xfer) {
+	for _, p := range x.cleanupRemove {
+		os.RemoveAll(p)
+	}
+	for _, g := range x.cleanupGlobs {
+		matches, _ := filepath.Glob(g)
+		for _, mt := range matches {
+			os.Remove(mt)
+		}
 	}
 }
 
@@ -110,15 +152,25 @@ func (m model) transfersView() string {
 	}
 	active := 0
 	for _, x := range m.transfers {
-		if !x.done {
+		if !x.done && !x.cancelled {
 			active++
 		}
 	}
-	rows := []string{dimStyle.Render(fmt.Sprintf("transfers (%d active)", active))}
-	for _, x := range m.transfers {
+	header := dimStyle.Render(fmt.Sprintf("transfers (%d active)", active))
+	if m.focus == focusTransfers {
+		header = cursorStyle.Render("transfers ") + dimStyle.Render(fmt.Sprintf("(%d active)", active))
+	}
+	rows := []string{header}
+	for i, x := range m.transfers {
+		marker := "  "
+		if m.focus == focusTransfers && i == m.xferCursor {
+			marker = cursorStyle.Render("▸ ")
+		}
 		name := padRight(truncate(x.label, xferNameWidth), xferNameWidth)
 		var right string
 		switch {
+		case x.cancelled:
+			right = errStyle.Render("✗") + " " + dimStyle.Render("cancelled")
 		case x.done && x.err != nil:
 			detail := x.err.Error()
 			if x.last != "" {
@@ -141,7 +193,7 @@ func (m model) transfersView() string {
 				right += " " + dimStyle.Render(strings.Join(parts, " "))
 			}
 		}
-		rows = append(rows, name+" "+right)
+		rows = append(rows, marker+name+" "+right)
 	}
 	return strings.Join(rows, "\n")
 }

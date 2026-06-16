@@ -49,6 +49,14 @@ func sortEntries(entries []sshx.Entry, mode sortMode) {
 	})
 }
 
+// focusArea selects which pane the arrow keys scroll.
+type focusArea int
+
+const (
+	focusFiles focusArea = iota
+	focusTransfers
+)
+
 func (m model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.destActive {
 		return m.updateDestPopover(msg)
@@ -62,6 +70,27 @@ func (m model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cancelTransfers()
 		m.closeSession()
 		return m, tea.Quit
+	case "t":
+		// Toggle scroll focus between the file list and the transfers panel.
+		if len(m.transfers) > 0 {
+			if m.focus == focusFiles {
+				m.focus = focusTransfers
+				m.clampXferCursor()
+			} else {
+				m.focus = focusFiles
+			}
+		}
+		return m, nil
+	}
+	if m.focus == focusTransfers {
+		return m.updateTransferFocus(key)
+	}
+	return m.updateFileFocus(key)
+}
+
+// updateFileFocus handles keys while the file list has scroll focus.
+func (m model) updateFileFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch key.String() {
 	case "esc":
 		m.cancelTransfers()
 		m.closeSession()
@@ -122,6 +151,50 @@ func (m model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateTransferFocus handles keys while the transfers panel has scroll focus.
+func (m model) updateTransferFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if len(m.transfers) == 0 {
+		m.focus = focusFiles
+		return m, nil
+	}
+	switch key.String() {
+	case "esc":
+		m.focus = focusFiles
+	case "up", "k":
+		if m.xferCursor > 0 {
+			m.xferCursor--
+		}
+	case "down", "j":
+		if m.xferCursor < len(m.transfers)-1 {
+			m.xferCursor++
+		}
+	case "c":
+		// Cancel the highlighted transfer if it is still running.
+		x := m.transfers[m.xferCursor]
+		if !x.done && x.cancel != nil {
+			x.cancel()
+			x.cancel = nil
+			x.cancelled = true
+		}
+	case "x":
+		m.clearFinished()
+		m.clampXferCursor()
+		if len(m.transfers) == 0 {
+			m.focus = focusFiles
+		}
+	}
+	return m, nil
+}
+
+func (m *model) clampXferCursor() {
+	if m.xferCursor >= len(m.transfers) {
+		m.xferCursor = len(m.transfers) - 1
+	}
+	if m.xferCursor < 0 {
+		m.xferCursor = 0
+	}
+}
+
 // updateDestPopover drives the local-destination popover. Enter queues a
 // background transfer and returns to browsing; esc dismisses the popover.
 func (m model) updateDestPopover(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -159,7 +232,14 @@ func (m model) updateDestPopover(msg tea.Msg) (tea.Model, tea.Cmd) {
 			LocalDest: dest,
 			Cfg:       m.cfg.Rsync,
 		}
-		m.transfers = append(m.transfers, &xfer{id: id, label: transferLabel(m.pendingSources), dest: dest})
+		remove, globs := cleanupTargets(dest, m.pendingSources)
+		m.transfers = append(m.transfers, &xfer{
+			id:            id,
+			label:         transferLabel(m.pendingSources),
+			dest:          dest,
+			cleanupRemove: remove,
+			cleanupGlobs:  globs,
+		})
 		m.destActive = false
 		m.destInput.Blur()
 		m.selected = map[string]bool{} // ready for the next selection
@@ -249,9 +329,13 @@ func (m *model) clampScroll() {
 }
 
 func (m model) visibleRows() int {
-	// chrome: title + breadcrumb + blank + status + footer = 5 lines, plus the
-	// bottom transfers panel.
-	r := m.height - 5 - m.transfersHeight()
+	// chrome: title + breadcrumb + blank + status + footer = 5 lines. When there
+	// are transfers, add the divider plus the panel.
+	chrome := 5
+	if len(m.transfers) > 0 {
+		chrome += 1 + m.transfersHeight() // divider + panel
+	}
+	r := m.height - chrome
 	if r < 3 {
 		r = 3
 	}
@@ -283,7 +367,7 @@ func (m model) listLines(rows int) []string {
 			size = dimStyle.Render(fmt.Sprintf("%8s", humanSize(e.Size)))
 		}
 		cursor := "  "
-		if i == m.brCursor {
+		if i == m.brCursor && m.focus == focusFiles {
 			cursor = cursorStyle.Render("▸ ")
 		}
 		out = append(out, fmt.Sprintf("%s%s %s  %s", cursor, check, size, name))
@@ -319,20 +403,31 @@ func (m model) viewBrowser() string {
 	lines = append(lines, dimStyle.Render(status))
 
 	if panel := m.transfersView(); panel != "" {
+		lines = append(lines, dividerLine(m.width)) // separate files from transfers
 		lines = append(lines, strings.Split(panel, "\n")...)
 	}
-	lines = append(lines, helpStyle.Render(browserHelp(m.sortMode, len(m.transfers) > 0)))
+	lines = append(lines, helpStyle.Render(m.footer()))
 	return strings.Join(lines, "\n")
 }
 
-// browserHelp renders the browser footer, reflecting the current sort so `s`
-// shows what the listing is ordered by.
-func browserHelp(mode sortMode, hasTransfers bool) string {
+func dividerLine(w int) string {
+	if w < 1 {
+		w = 1
+	}
+	return dimStyle.Render(strings.Repeat("─", w))
+}
+
+// footer renders the help line for the focused pane; the file footer reflects
+// the current sort so `s` shows what the listing is ordered by.
+func (m model) footer() string {
+	if m.focus == focusTransfers {
+		return "↑/↓ select • c cancel • x clear done • t/esc files • q quit"
+	}
 	h := fmt.Sprintf(
 		"↑/↓ move • → open • ← up • space select • d download • s sort:%s • a all • c clear • r refresh • esc back",
-		mode)
-	if hasTransfers {
-		h += " • x clear done"
+		m.sortMode)
+	if len(m.transfers) > 0 {
+		h += " • t transfers"
 	}
 	return h
 }

@@ -1,6 +1,9 @@
 package ui
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +15,60 @@ import (
 	"github.com/rjayasin/rtr/internal/sshx"
 	"github.com/rjayasin/rtr/internal/transfer"
 )
+
+// Cancelling a download removes the partial files it created, but never deletes
+// a destination entry that already existed when the transfer started.
+func TestCancelCleanup(t *testing.T) {
+	dir := t.TempDir()
+	existing := filepath.Join(dir, "keep.txt")
+	if err := os.WriteFile(existing, []byte("orig"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// At job start, new.bin does not exist yet; keep.txt does.
+	remove, globs := cleanupTargets(dir, []string{"/remote/new.bin", "/remote/keep.txt"})
+	if len(remove) != 1 || remove[0] != filepath.Join(dir, "new.bin") {
+		t.Fatalf("remove = %v, want [<dir>/new.bin]", remove)
+	}
+
+	// Simulate rsync writing the partial file and a temp file, then cleanup.
+	partial := filepath.Join(dir, "new.bin")
+	tmp := filepath.Join(dir, ".new.bin.AbC123")
+	for _, p := range []string{partial, tmp} {
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cleanupPartial(&xfer{cleanupRemove: remove, cleanupGlobs: globs})
+
+	if _, err := os.Stat(partial); !errors.Is(err, os.ErrNotExist) {
+		t.Error("partial file should be removed")
+	}
+	if _, err := os.Stat(tmp); !errors.Is(err, os.ErrNotExist) {
+		t.Error("rsync temp file should be removed")
+	}
+	if _, err := os.Stat(existing); err != nil {
+		t.Error("pre-existing file must be preserved")
+	}
+}
+
+// Pressing c on a highlighted running transfer cancels it and marks it cancelled.
+func TestTransferFocusCancel(t *testing.T) {
+	m := testModel()
+	m.screen = screenBrowser
+	m.focus = focusTransfers
+	cancelled := false
+	m.transfers = []*xfer{{id: 0, label: "f", cancel: func() { cancelled = true }}}
+
+	updated, _ := m.updateBrowser(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = updated.(model)
+	if !cancelled {
+		t.Error("cancel func should have been called")
+	}
+	if !m.transfers[0].cancelled {
+		t.Error("transfer should be marked cancelled")
+	}
+}
 
 // The popover overlay must keep the base row's text to the left and right of the
 // box, so file names beside the popover remain visible.

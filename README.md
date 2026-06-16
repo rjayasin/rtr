@@ -15,14 +15,17 @@ rtr — nas
   [x]   1.4G   ubuntu.iso
 
 1 selected
+────────────────────────────────────────────────────────────────
 transfers (1 active)
 ubuntu.iso             ███████████░░░░░░░░░░░  47% 3.2MB/s ETA 0:00:08
 archive.tar.gz         ✓ → /Users/you/Downloads
-↑/↓ move • → open • ← up • space select • d download • s sort:name • … • x clear done
+↑/↓ move • → open • space select • d download • s sort:name • … • t transfers
 ```
 
 Pressing `d` opens a destination popover *over* the file list; hit `enter` and
-the download starts in the background while you keep browsing.
+the download starts in the background while you keep browsing. Press `t` to move
+the cursor down into the transfers panel, where you can scroll the downloads and
+`c` to cancel the highlighted one.
 
 ## Why
 
@@ -64,7 +67,8 @@ multi-word values like `EDITOR="code -w"` are honored.
 |------------|------|
 | Bookmarks  | `↑/↓` move · `enter` connect · `n` new · `e` edit · `d` delete · `q` quit |
 | Form       | `tab`/`↑↓` change field · `enter` save · `esc` cancel |
-| Browser    | `↑/↓` move · `→`/`enter` open dir · `←` up · `space` select · `a` all · `c` clear · `s` toggle sort (name ↔ time) · `d` download · `x` clear finished transfers · `r` refresh · `esc` back |
+| Browser (files) | `↑/↓` move · `→`/`enter` open dir · `←` up · `space` select · `a` all · `c` clear · `s` toggle sort (name ↔ time) · `d` download · `t` focus transfers · `r` refresh · `esc` back |
+| Browser (transfers) | `↑/↓` select · `c` cancel highlighted · `x` clear finished · `t`/`esc` back to files |
 | Download popover | `enter` start (in background) · `esc` cancel |
 
 If no items are checked, `d` downloads the entry under the cursor. Each `enter`

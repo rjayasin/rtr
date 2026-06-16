@@ -47,6 +47,8 @@ type model struct {
 	connecting bool
 	spinner    spinner.Model
 	sortMode   sortMode
+	focus      focusArea // which pane the arrow keys scroll
+	xferCursor int       // highlighted transfer when focus is on the panel
 
 	// destination popover (overlaid on the browser)
 	destActive     bool
