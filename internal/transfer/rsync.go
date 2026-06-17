@@ -1,3 +1,5 @@
+// Package transfer runs rsync downloads in the background, parsing rsync's
+// progress output into a stream of events the UI can render and cancel.
 package transfer
 
 import (
@@ -153,7 +155,11 @@ func Start(ctx context.Context, j Job) (<-chan Event, error) {
 				ch <- Event{Line: tok}
 			}
 		}
+		scanErr := sc.Err()
 		err := cmd.Wait()
+		if err == nil {
+			err = scanErr // surface a read error only if the process itself succeeded
+		}
 		ch <- Event{Done: true, Err: err}
 	}()
 	return ch, nil

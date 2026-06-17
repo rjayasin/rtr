@@ -24,6 +24,11 @@ test:
 vet:
 	$(GO) vet ./...
 
+## lint: run staticcheck with all checks (including ST stylechecks)
+.PHONY: lint
+lint:
+	$(GO) run honnef.co/go/tools/cmd/staticcheck@latest -checks=all ./...
+
 ## fmt: format all Go sources
 .PHONY: fmt
 fmt:
