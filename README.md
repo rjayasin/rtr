@@ -4,42 +4,11 @@
 
 A terminal UI download client. Bookmark remote SSH hosts, browse their
 directories over SFTP, pick files or folders, and pull them down with `rsync`.
-Downloads run in the background — start as many as you like and keep browsing
-while their progress bars stack at the bottom of the window.
+Downloads run in the background while you keep browsing, with progress bars
+stacked at the bottom of the window.
 
-```
-rtr — nas
-/volume1/media
-
-  [ ]    812M  archive.tar.gz
-▸ [ ]          movies/
-  [ ]     12K  notes.txt
-  [x]   1.4G   ubuntu.iso
-
-1 selected
-────────────────────────────────────────────────────────────────
-transfers (1 active)
-ubuntu.iso             ███████████░░░░░░░░░░░  47% 3.2MB/s ETA 0:00:08
-archive.tar.gz         ✓ → /Users/you/Downloads
-↑/↓ move • → open • x/space select • enter download • s sort:name • … • t transfers
-```
-
-Pressing `enter` opens a destination popover *over* the file list; hit `enter`
-again and the download starts in the background while you keep browsing. Press
-`t` to move the cursor down into the transfers panel, where you can scroll the
-downloads and `c` to cancel the highlighted one.
-
-## Why
-
-`rsync` over SSH is the right tool for resumable, integrity-checked transfers,
-but driving it by hand means remembering hosts, typing remote paths, and staring
-at a frozen terminal. `rtr` wraps that workflow in a keyboard-driven TUI: your
-hosts are bookmarks, remote directories are browsable, and the rsync command it
-spawns is configurable and monitored.
-
-> **Scope:** `rtr` does **remote → local** transfers — it pulls a remote source
-> down to the machine you run it on. (rsync cannot move data directly between two
-> remote hosts in a single invocation.)
+`rtr` does **remote → local** transfers — it pulls a remote source down to the
+machine you run it on.
 
 ## Install
 
@@ -60,43 +29,24 @@ rtr --config ./my.toml   # use a specific config file
 rtr --config-path        # print where the config lives
 ```
 
-`rtr config` opens the file in `$EDITOR` (falling back to `$VISUAL`, then `vi`);
-multi-word values like `EDITOR="code -w"` are honored.
-
 ### Keys
 
 | Screen     | Keys |
 |------------|------|
 | Bookmarks  | `↑/↓` move · `enter` connect · `n` new · `e` edit · `d` delete · `t` focus transfers · `q` quit |
 | Form       | `tab`/`↑↓` change field · `enter` save · `esc` cancel |
-| Browser (files) | `↑/↓` move · `→` open dir · `←` up · `x`/`space` select · `a` all · `c` clear · `s` toggle sort (name ↔ time) · `enter` download (or open dir) · `t` focus transfers · `r` refresh · `esc` back |
-| Transfers panel (`t`) | `↑/↓` select · `c` cancel highlighted · `x` clear finished · `t`/`esc` back |
+| Browser    | `↑/↓` move · `→` open dir · `←` up · `x`/`space` select · `a` all · `c` clear · `s` toggle sort · `enter` download (or open dir) · `t` focus transfers · `r` refresh · `esc` back |
+| Transfers (`t`) | `↑/↓` select · `c` cancel highlighted · `x` clear finished · `t`/`esc` back |
 | Download popover | `enter` start (in background) · `esc` cancel |
 
-`enter` on a highlighted directory (with nothing selected) opens it; otherwise it
-starts a download. If no items are checked, it downloads the entry under the
-cursor. Each download queues another background transfer; they run in parallel in
-the bottom panel, which is shown on every screen. Press `t` to scroll into the
-panel and `c` to cancel the highlighted download (which removes its partial
-files); `x` clears finished ones. A cancelled transfer clears itself from the
-panel after 10 seconds.
-
-### Resuming and quitting
-
-In-progress downloads are recorded in `transfers.json` (beside the config). If
-you quit — or rtr is interrupted — **they are restarted and resumed on the next
-launch** (rsync's `--partial`/`--append-verify` continue where they left off, so
-nothing is re-downloaded). Quitting while a download is running first asks for
-confirmation.
+In-progress downloads are recorded in `transfers.json` (beside the config) and
+resumed on the next launch if you quit or rtr is interrupted.
 
 ## Configuration
 
 Config lives at `$XDG_CONFIG_HOME/rtr/config.toml` (default
-`~/.config/rtr/config.toml`) and is created on first run. Bookmarks added through
-the UI are written back to it.
-
-Downloads default to the directory `rtr` was launched from (you can edit the
-destination in the popover before starting).
+`~/.config/rtr/config.toml`) and is created on first run. Bookmarks added
+through the UI are written back to it.
 
 ```toml
 [rsync]
@@ -118,49 +68,17 @@ destination in the popover before starting).
   ssh_alias = "box"   # inherit HostName/User/Port/IdentityFile from ~/.ssh/config
 ```
 
-### The rsync command
-
-`rtr` builds the command programmatically (no shell, so paths with spaces are
-safe). For each transfer it runs:
-
-```
-<binary> <flags…> --info=progress2 --no-inc-recursive <extra_args…> \
-    [-e "ssh -p <port> -i <identity>"] user@host:'<remote path>' … <local dir>
-```
-
-- `--info=progress2` gives a single machine-readable overall percentage, which
-  drives the progress bar.
-- `--no-inc-recursive` makes rsync size the whole transfer up front so that
-  percentage is meaningful from the start.
-- The SSH transport (`-e …`) is only added when the bookmark needs a non-default
-  port, an identity file, or a jump host; otherwise rsync uses your `ssh` and
-  honors `~/.ssh/config`.
-
-## Authentication & host keys
-
-- Auth prefers `ssh-agent` (`SSH_AUTH_SOCK`), then the bookmark's identity file,
-  then the usual `~/.ssh/id_{ed25519,ecdsa,rsa}`.
-- Host keys are checked against `~/.ssh/known_hosts`. An **unknown** host is
-  trusted on first use and recorded (like OpenSSH's
-  `StrictHostKeyChecking=accept-new`); a **changed** key is rejected, since that
-  is the dangerous case.
+Auth prefers `ssh-agent`, then the bookmark's identity file, then the usual
+`~/.ssh/id_{ed25519,ecdsa,rsa}`. Host keys are checked against
+`~/.ssh/known_hosts`: unknown hosts are trusted on first use, changed keys are
+rejected.
 
 ## Development
 
 ```sh
-go test ./...     # unit tests: progress parsing, rsync arg building, config, UI flows
+go test ./...
 go vet ./...
 gofmt -l .
-```
-
-Layout:
-
-```
-main.go                    entrypoint & flags
-internal/config            TOML config + bookmarks
-internal/sshx              SSH dial (agent/key/jump/known_hosts) + SFTP browsing
-internal/transfer          rsync arg building, spawn, --info=progress2 parsing
-internal/ui                Bubble Tea: bookmarks, browser (with dest popover + background transfers panel)
 ```
 
 Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea),
