@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/rjayasin/rtr/internal/sshx"
@@ -74,6 +75,9 @@ func (m model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.destActive {
 		return m.updateDestPopover(msg)
 	}
+	if m.searchActive {
+		return m.updateSearch(msg)
+	}
 	if key, ok := msg.(tea.KeyMsg); ok {
 		return m.updateFileFocus(key)
 	}
@@ -85,18 +89,29 @@ func (m model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) updateFileFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case "esc":
+		// A live filter is cleared first; a second esc leaves the browser.
+		if m.searchInput.Value() != "" {
+			m.clearSearch()
+			return m, nil
+		}
 		// Leave the browser but keep downloads running (they show on the
 		// bookmarks screen and resume on the next launch).
 		m.closeSession()
 		m.focus = focusFiles
 		m.screen = screenBookmarks
 		return m, nil
+	case "/":
+		// Open the search field, keeping any existing query so it can be edited.
+		m.searchActive = true
+		m.searchInput.Focus()
+		m.searchInput.CursorEnd()
+		return m, textinput.Blink
 	case "up", "k":
 		if m.brCursor > 0 {
 			m.brCursor--
 		}
 	case "down", "j":
-		if m.brCursor < len(m.entries)-1 {
+		if m.brCursor < len(m.filteredEntries())-1 {
 			m.brCursor++
 		}
 	case "right", "l":
@@ -117,7 +132,7 @@ func (m model) updateFileFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.toggle(e.Path)
 		}
 	case "a":
-		for _, e := range m.entries {
+		for _, e := range m.filteredEntries() {
 			m.selected[e.Path] = true
 		}
 	case "c":
@@ -262,6 +277,58 @@ func (m model) updateDestPopover(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// updateSearch drives the browser search field. Typing filters the listing
+// live; enter accepts the filter and returns to list navigation; esc cancels
+// the search and clears the filter.
+func (m model) updateSearch(msg tea.Msg) (tea.Model, tea.Cmd) {
+	key, ok := msg.(tea.KeyMsg)
+	if !ok {
+		var cmd tea.Cmd
+		m.searchInput, cmd = m.searchInput.Update(msg)
+		return m, cmd
+	}
+	switch key.String() {
+	case "esc":
+		m.clearSearch()
+		return m, nil
+	case "enter":
+		// Keep the filter applied but hand keys back to the list.
+		m.searchActive = false
+		m.searchInput.Blur()
+		m.brCursor, m.brOffset = 0, 0
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.searchInput, cmd = m.searchInput.Update(msg)
+	// The match set may have changed; restart from the top of the results.
+	m.brCursor, m.brOffset = 0, 0
+	return m, cmd
+}
+
+// clearSearch dismisses the search field and removes any active filter.
+func (m *model) clearSearch() {
+	m.searchActive = false
+	m.searchInput.Blur()
+	m.searchInput.SetValue("")
+	m.brCursor, m.brOffset = 0, 0
+}
+
+// filteredEntries returns the entries matching the current search query
+// (case-insensitive substring on the name), or all entries when no query is set.
+func (m model) filteredEntries() []sshx.Entry {
+	q := strings.ToLower(strings.TrimSpace(m.searchInput.Value()))
+	if q == "" {
+		return m.entries
+	}
+	out := make([]sshx.Entry, 0, len(m.entries))
+	for _, e := range m.entries {
+		if strings.Contains(strings.ToLower(e.Name), q) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 // transferLabel names a queued download for the panel.
 func transferLabel(sources []string) string {
 	if len(sources) == 1 {
@@ -286,10 +353,11 @@ func (m *model) resort() {
 }
 
 func (m model) current() (e entryRef, ok bool) {
-	if m.brCursor < 0 || m.brCursor >= len(m.entries) {
+	es := m.filteredEntries()
+	if m.brCursor < 0 || m.brCursor >= len(es) {
 		return entryRef{}, false
 	}
-	en := m.entries[m.brCursor]
+	en := es[m.brCursor]
 	return entryRef{Name: en.Name, Path: en.Path, IsDir: en.IsDir, Size: en.Size}, true
 }
 
@@ -346,6 +414,9 @@ func (m model) visibleRows() int {
 	if len(m.transfers) > 0 {
 		chrome += 1 + m.transfersHeight() // divider + panel
 	}
+	if m.searchActive || m.searchInput.Value() != "" {
+		chrome++ // search field sits above the footer
+	}
 	r := m.height - chrome
 	if r < 3 {
 		r = 3
@@ -356,16 +427,21 @@ func (m model) visibleRows() int {
 // listLines renders exactly rows lines of the directory listing (padded with
 // blanks), so the status/panel/footer stay pinned to the bottom of the window.
 func (m model) listLines(rows int) []string {
+	entries := m.filteredEntries()
 	out := make([]string, 0, rows)
-	if len(m.entries) == 0 {
-		out = append(out, dimStyle.Render("(empty directory)"))
+	if len(entries) == 0 {
+		if m.searchInput.Value() != "" {
+			out = append(out, dimStyle.Render("(no matches)"))
+		} else {
+			out = append(out, dimStyle.Render("(empty directory)"))
+		}
 	}
 	end := m.brOffset + rows
-	if end > len(m.entries) {
-		end = len(m.entries)
+	if end > len(entries) {
+		end = len(entries)
 	}
 	for i := m.brOffset; i < end; i++ {
-		e := m.entries[i]
+		e := entries[i]
 		check := "[ ]"
 		if m.selected[e.Path] {
 			check = selectedStyle.Render("[x]")
@@ -407,7 +483,10 @@ func (m model) viewBrowser() string {
 	}
 	lines = append(lines, listLines...)
 
-	status := fmt.Sprintf("%d selected", len(m.selected))
+	status := ""
+	if n := len(m.selected); n > 0 {
+		status = fmt.Sprintf("%d selected", n)
+	}
 	if m.err != nil && !m.destActive {
 		status = errStyle.Render("error: ") + m.err.Error()
 	}
@@ -417,9 +496,19 @@ func (m model) viewBrowser() string {
 		lines = append(lines, dividerLine(m.width)) // separate files from transfers
 		lines = append(lines, strings.Split(panel, "\n")...)
 	}
+	// The search field (or an indicator of an applied filter) sits just above
+	// the shortcut footer.
+	if m.searchActive {
+		lines = append(lines, m.searchInput.View())
+	} else if q := m.searchInput.Value(); q != "" {
+		lines = append(lines, dimStyle.Render(fmt.Sprintf("/%s", q)))
+	}
 	browserHelp := fmt.Sprintf(
-		"↑/↓ move • → open • ← up • x/space select • enter download • t/n sort:%s • a all • c clear • r refresh • esc back",
+		"↑/↓ move • → open • ← up • x/space select • / search • enter download • t/n sort:%s • a all • c clear • r refresh • esc back",
 		m.sortMode)
+	if m.searchActive {
+		browserHelp = "type to filter • enter accept • esc clear"
+	}
 	lines = append(lines, helpStyle.Render(m.footer(browserHelp)))
 	return strings.Join(lines, "\n")
 }

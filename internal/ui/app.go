@@ -59,6 +59,10 @@ type model struct {
 	pendingSources []string
 	startDir       string // working dir at launch; default download destination
 
+	// browser search (filters the listing by name, case-insensitive substring)
+	searchActive bool
+	searchInput  textinput.Model
+
 	// background transfers, shown stacked at the bottom of every screen
 	progress      progress.Model
 	transfers     []*xfer
@@ -79,6 +83,11 @@ func New(cfg *config.Config) model {
 	di.Prompt = "› "
 	di.CharLimit = 1024
 
+	si := textinput.New()
+	si.Prompt = "/"
+	si.Placeholder = "filter"
+	si.CharLimit = 256
+
 	// Default download destination: the directory rtr was launched from.
 	wd, err := os.Getwd()
 	if err != nil {
@@ -91,6 +100,7 @@ func New(cfg *config.Config) model {
 		selected:      map[string]bool{},
 		spinner:       sp,
 		destInput:     di,
+		searchInput:   si,
 		progress:      progress.New(progress.WithDefaultGradient()),
 		startDir:      wd,
 		transfersPath: config.TransfersPath(cfg.Path()),
@@ -239,6 +249,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.entries = msg.entries
 		m.sortMode = sortTimeDesc // default each connection to newest-first
 		sortEntries(m.entries, m.sortMode)
+		m.clearSearch()
 		m.brCursor, m.brOffset = 0, 0
 		m.connecting = false
 		m.err = nil
@@ -249,6 +260,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cwd = msg.dir
 		m.entries = msg.entries
 		sortEntries(m.entries, m.sortMode)
+		m.clearSearch()
 		m.brCursor, m.brOffset = 0, 0
 		m.err = nil
 		return m, nil
@@ -301,7 +313,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // requests quit.
 func (m model) handleGlobalKey(key tea.KeyMsg) (model, tea.Cmd, bool) {
 	ks := key.String()
-	textMode := m.screen == screenForm || m.destActive
+	textMode := m.screen == screenForm || m.destActive || m.searchActive
 
 	if m.confirmQuit {
 		switch ks {
