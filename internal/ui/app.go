@@ -67,6 +67,15 @@ type model struct {
 	searchActive bool
 	searchInput  textinput.Model
 
+	// local file pane (toggled with `l`): a read-only view of the local
+	// directory rtr was launched from, shown split to the right of the remote list
+	localActive  bool
+	localCwd     string
+	localEntries []localEntry
+	localCursor  int
+	localOffset  int
+	localErr     error
+
 	// background transfers, shown stacked at the bottom of every screen
 	progress          progress.Model
 	transfers         []*xfer
@@ -428,20 +437,47 @@ func (m model) handleGlobalKey(key tea.KeyMsg) (model, tea.Cmd, bool) {
 		return m, nil, false
 	}
 
-	if ks == "tab" && len(m.transfers) > 0 {
-		if m.focus == focusFiles {
-			m.focus = focusTransfers
-			m.clampXferCursor()
-		} else {
-			m.focus = focusFiles
+	if ks == "l" && m.screen == screenBrowser {
+		return m.toggleLocal(), nil, true
+	}
+
+	if ks == "tab" {
+		if cycle := m.focusCycle(); len(cycle) > 1 {
+			m.focus = nextInCycle(cycle, m.focus)
+			if m.focus == focusTransfers {
+				m.clampXferCursor()
+			}
+			return m, nil, true
 		}
-		return m, nil, true
 	}
 	if m.focus == focusTransfers {
 		nm, cmd := m.updateTransferFocus(key)
 		return nm.(model), cmd, true
 	}
 	return m, nil, false
+}
+
+// focusCycle is the ordered set of panes tab rotates through, given what is
+// currently visible: the remote list, the local pane (when open), and the
+// transfers panel (when any transfers exist).
+func (m model) focusCycle() []focusArea {
+	cycle := []focusArea{focusFiles}
+	if m.screen == screenBrowser && m.localActive {
+		cycle = append(cycle, focusLocal)
+	}
+	if len(m.transfers) > 0 {
+		cycle = append(cycle, focusTransfers)
+	}
+	return cycle
+}
+
+func nextInCycle(cycle []focusArea, cur focusArea) focusArea {
+	for i, f := range cycle {
+		if f == cur {
+			return cycle[(i+1)%len(cycle)]
+		}
+	}
+	return cycle[0]
 }
 
 // doDisconnect closes the session and returns to the bookmarks screen. Downloads

@@ -586,6 +586,98 @@ func TestUpdateAvailableNotice(t *testing.T) {
 	}
 }
 
+// `l` opens a local file pane showing the launch directory; tab cycles focus
+// between remote and local; → descends into a local subdirectory; `l` closes it.
+func TestLocalPane(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := testModel()
+	m.screen = screenBrowser
+	m.startDir = dir
+
+	// l opens the pane, loads the launch dir, and focuses it.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	m = updated.(model)
+	if !m.localActive || m.focus != focusLocal {
+		t.Fatalf("l should open and focus the local pane (active=%v focus=%v)", m.localActive, m.focus)
+	}
+	if m.localCwd != dir || len(m.localEntries) != 2 {
+		t.Fatalf("local pane should list %q: cwd=%q entries=%d", dir, m.localCwd, len(m.localEntries))
+	}
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "local:") || !strings.Contains(v, "remote:") {
+		t.Errorf("split view should show both panes\n%s", v)
+	}
+
+	// tab → remote, tab → back to local.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = updated.(model)
+	if m.focus != focusFiles {
+		t.Errorf("tab should move focus to remote, got %v", m.focus)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = updated.(model)
+	if m.focus != focusLocal {
+		t.Errorf("tab should move focus back to local, got %v", m.focus)
+	}
+
+	// Cursor starts on "sub" (dirs first); → descends into it.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = updated.(model)
+	if m.localCwd != filepath.Join(dir, "sub") {
+		t.Errorf("→ should descend into sub, got %q", m.localCwd)
+	}
+
+	// l closes the pane and returns focus to remote.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	m = updated.(model)
+	if m.localActive || m.focus != focusFiles {
+		t.Errorf("l should close the pane and focus remote (active=%v focus=%v)", m.localActive, m.focus)
+	}
+}
+
+// With the local pane open and navigated into a subdirectory, a new download
+// defaults its destination to that local directory rather than the launch dir.
+func TestDownloadDestFollowsLocalPane(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "downloads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m := testModel()
+	m.screen = screenBrowser
+	m.startDir = dir
+	m.cwd = "/remote"
+	m.entries = []sshx.Entry{{Name: "f.txt", Path: "/remote/f.txt", Size: 1}}
+	m.brCursor = 0
+
+	// Open the local pane and descend into downloads/.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	m = updated.(model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = updated.(model)
+	want := filepath.Join(dir, "downloads")
+	if m.localCwd != want {
+		t.Fatalf("local cwd = %q, want %q", m.localCwd, want)
+	}
+
+	// Back to the remote pane, start a download.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = updated.(model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(model)
+	if !m.destActive {
+		t.Fatal("enter should open the download popover")
+	}
+	if got := m.destInput.Value(); got != want {
+		t.Errorf("download dest = %q, want local pane dir %q", got, want)
+	}
+}
+
 // handleEvent updates the matching background transfer; progress keeps the wait
 // loop alive, Done stops it and marks completion.
 func TestHandleEvent(t *testing.T) {
