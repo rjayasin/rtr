@@ -164,7 +164,7 @@ func TestResumeRestoresTransfers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := New(cfg)
+	m := New(cfg, "test")
 	if len(m.transfers) != 1 || m.transfers[0].label != "a.txt" {
 		t.Fatalf("restored transfers = %+v", m.transfers)
 	}
@@ -194,7 +194,7 @@ func testModel() model {
 		{Name: "nas", User: "me", Host: "nas.local", Port: 2222, RemotePath: "/volume1"},
 		{Name: "box", Host: "box"},
 	}
-	m := New(cfg)
+	m := New(cfg, "test")
 	m2, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	return m2.(model)
 }
@@ -568,6 +568,21 @@ func TestDisconnectArrowSelection(t *testing.T) {
 	m = updated.(model)
 	if m.screen != screenBookmarks {
 		t.Errorf("enter on Yes should disconnect, got screen %d", m.screen)
+	}
+}
+
+// An updateAvailableMsg surfaces a notice on the bookmarks screen.
+func TestUpdateAvailableNotice(t *testing.T) {
+	m := testModel()
+	m.screen = screenBookmarks
+	if strings.Contains(ansi.Strip(m.View()), "update available") {
+		t.Error("no notice should show before an update is detected")
+	}
+	updated, _ := m.Update(updateAvailableMsg{latest: "v9.9.9"})
+	m = updated.(model)
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "update available") || !strings.Contains(view, "v9.9.9") {
+		t.Errorf("bookmarks view should show the update notice\n%s", view)
 	}
 }
 

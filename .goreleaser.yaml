@@ -1,0 +1,44 @@
+version: 2
+
+project_name: rtr
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: .
+    binary: rtr
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goarm:
+      - "6"
+      - "7"
+    ignore:
+      # macOS has no 32-bit ARM build.
+      - goos: darwin
+        goarch: arm
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - formats: [tar.gz]
+    # Matches what internal/update (go-selfupdate) looks for: os + arch in name.
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  github:
+    owner: rjayasin
+    name: rtr

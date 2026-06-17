@@ -9,19 +9,38 @@ stacked at the bottom of the window.
 
 ## Install
 
-Requires Go 1.23+, plus `rsync` and `ssh` on your `PATH`.
+`rsync` and `ssh` must be on your `PATH`.
+
+Download a prebuilt binary for your OS/arch from the
+[latest release](https://github.com/rjayasin/rtr/releases/latest), or build from
+source (requires Go 1.23+):
 
 ```sh
 go install github.com/rjayasin/rtr@latest
 # or, from a clone:
-go build -o rtr . && ./rtr
+make build && ./rtr
 ```
+
+## Updating
+
+If you installed a release binary, rtr can update itself in place:
+
+```sh
+rtr update    # fetch the latest release and replace the running binary
+```
+
+rtr also checks for a newer release at startup and shows a notice on the
+bookmarks screen when one is available. Set `RTR_NO_UPDATE_CHECK=1` to disable
+that check. (Source builds report version `dev` and are not auto-nagged; run
+`rtr update` to move onto a published release.)
 
 ## Usage
 
 ```sh
 rtr                      # launch the TUI
 rtr config               # open the config file in $EDITOR (creating it if needed)
+rtr update               # update to the latest release
+rtr version              # print the version
 rtr --config ./my.toml   # use a specific config file
 rtr --config-path        # print where the config lives
 ```

@@ -1,6 +1,8 @@
-BINARY := rtr
-GO     := go
-ARGS   ?=
+BINARY  := rtr
+GO      := go
+ARGS    ?=
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS := -X main.version=$(VERSION)
 
 .DEFAULT_GOAL := run
 
@@ -12,7 +14,7 @@ run: build
 ## build: compile the binary
 .PHONY: build
 build:
-	$(GO) build -o $(BINARY) .
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(BINARY) .
 
 ## test: run the test suite
 .PHONY: test
