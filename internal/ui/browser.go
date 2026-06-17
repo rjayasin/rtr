@@ -89,16 +89,15 @@ func (m model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) updateFileFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case "esc":
-		// A live filter is cleared first; a second esc leaves the browser.
+		// A live filter is cleared first; a second esc prompts to disconnect.
 		if m.searchInput.Value() != "" {
 			m.clearSearch()
 			return m, nil
 		}
-		// Leave the browser but keep downloads running (they show on the
-		// bookmarks screen and resume on the next launch).
-		m.closeSession()
-		m.focus = focusFiles
-		m.screen = screenBookmarks
+		// Confirm before leaving the browser. Downloads keep running either way
+		// (they show on the bookmarks screen and resume on the next launch).
+		m.confirmDisconnect = true
+		m.disconnectChoice = 1 // default to No
 		return m, nil
 	case "/":
 		// Open the search field, keeping any existing query so it can be edited.

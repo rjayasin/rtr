@@ -275,6 +275,48 @@ func (m model) quitConfirmBox() string {
 	return boxStyle.Width(clamp(m.width-8, 30, 56)).Render(inner)
 }
 
+// disconnectConfirmBox renders the "disconnect from host?" prompt shown when
+// esc is pressed in the browser, with selectable Yes/No buttons.
+func (m model) disconnectConfirmBox() string {
+	host := "this host"
+	if m.session != nil {
+		host = m.session.Bookmark.Label()
+	}
+	buttons := choiceButton("Yes", m.disconnectChoice == 0) +
+		"     " + choiceButton("No", m.disconnectChoice == 1)
+	inner := strings.Join([]string{
+		okStyle.Render("Disconnect"),
+		"Disconnect from " + host + "?",
+		"",
+		buttons,
+	}, "\n")
+	return boxStyle.Width(clamp(m.width-8, 30, 56)).Align(lipgloss.Center).Render(inner)
+}
+
+// choiceButton renders a Yes/No button for the disconnect prompt. The
+// accelerator (first letter) is always bold + underlined to hint the y/n
+// shortcut; the selected button is highlighted and bracketed. Each character
+// run is styled independently so the highlight survives the bold accelerator.
+func choiceButton(text string, selected bool) string {
+	fg := colDim
+	if selected {
+		fg = colAccent
+	}
+	base := lipgloss.NewStyle().Foreground(fg)
+	accel := base.Bold(true).Underline(true)
+
+	r := []rune(text)
+	label := accel.Render(string(r[0]))
+	if len(r) > 1 {
+		label += base.Render(string(r[1:]))
+	}
+	if selected {
+		bracket := base.Bold(true)
+		return bracket.Render("[ ") + label + bracket.Render(" ]")
+	}
+	return "  " + label + "  "
+}
+
 // destPopover renders the local-destination prompt as a bordered box that is
 // overlaid on top of the file list.
 func (m model) destPopover() string {

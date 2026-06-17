@@ -485,6 +485,92 @@ func TestNoSelectionHidesCount(t *testing.T) {
 	}
 }
 
+// esc in the browser opens a disconnect confirmation; esc/n dismiss it (staying
+// connected) and y disconnects to the bookmarks screen.
+func TestDisconnectConfirm(t *testing.T) {
+	m := testModel()
+	m.screen = screenBrowser
+	m.cwd = "/volume1"
+
+	// esc opens the prompt without leaving the browser.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(model)
+	if !m.confirmDisconnect {
+		t.Fatal("esc should open the disconnect prompt")
+	}
+	if m.screen != screenBrowser {
+		t.Fatalf("should stay on the browser while confirming, got screen %d", m.screen)
+	}
+	if m.disconnectChoice != 1 {
+		t.Errorf("prompt should default to No, got choice %d", m.disconnectChoice)
+	}
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "Disconnect") || !strings.Contains(view, "Yes") || !strings.Contains(view, "No") {
+		t.Errorf("disconnect prompt with Yes/No buttons should be visible\n%s", view)
+	}
+
+	// esc on the prompt dismisses it, staying connected.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(model)
+	if m.confirmDisconnect {
+		t.Error("esc on the prompt should dismiss it")
+	}
+	if m.screen != screenBrowser {
+		t.Error("dismissing should keep the browser open")
+	}
+
+	// n also dismisses.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	m = updated.(model)
+	if m.confirmDisconnect || m.screen != screenBrowser {
+		t.Error("n should dismiss the prompt and keep the browser open")
+	}
+
+	// y disconnects to the bookmarks screen.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = updated.(model)
+	if m.confirmDisconnect {
+		t.Error("y should close the prompt")
+	}
+	if m.screen != screenBookmarks {
+		t.Errorf("y should disconnect to bookmarks, got screen %d", m.screen)
+	}
+}
+
+// Arrow keys move the selection between Yes/No; enter activates the highlighted
+// button. The prompt defaults to No, so an immediate enter stays connected.
+func TestDisconnectArrowSelection(t *testing.T) {
+	base := testModel()
+	base.screen = screenBrowser
+
+	// Default (No) + enter dismisses, staying on the browser.
+	updated, _ := base.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m := updated.(model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(model)
+	if m.confirmDisconnect || m.screen != screenBrowser {
+		t.Error("enter on the default No should dismiss and stay connected")
+	}
+
+	// esc, then ← to select Yes, then enter disconnects.
+	updated, _ = base.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	m = updated.(model)
+	if m.disconnectChoice != 0 {
+		t.Fatalf("← should select Yes, got choice %d", m.disconnectChoice)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(model)
+	if m.screen != screenBookmarks {
+		t.Errorf("enter on Yes should disconnect, got screen %d", m.screen)
+	}
+}
+
 // handleEvent updates the matching background transfer; progress keeps the wait
 // loop alive, Done stops it and marks completion.
 func TestHandleEvent(t *testing.T) {
