@@ -57,6 +57,8 @@ type model struct {
 	destActive     bool
 	destInput      textinput.Model
 	pendingSources []string
+	pendingSize    int64 // total size of the file sources (dirs excluded)
+	pendingDirs    int   // number of directory sources (size not known up front)
 	startDir       string // working dir at launch; default download destination
 
 	// browser search (filters the listing by name, case-insensitive substring)

@@ -287,6 +287,8 @@ func (m model) destPopover() string {
 		names[i] = path.Base(s)
 	}
 
+	sizeLine := dimStyle.Render("Total: " + sizeSummary(m.pendingSize, m.pendingDirs))
+
 	second := dimStyle.Render("Save to:")
 	if m.err != nil {
 		second = errStyle.Render(m.err.Error())
@@ -299,7 +301,7 @@ func (m model) destPopover() string {
 	// only when that cap is reached. boxStyle's width covers padding, so the text
 	// area is two columns narrower than the width we set.
 	textW := 0
-	for _, l := range append([]string{title, second, input, help}, names...) {
+	for _, l := range append([]string{title, sizeLine, second, input, help}, names...) {
 		if w := ansi.StringWidth(l); w > textW {
 			textW = w
 		}
@@ -310,7 +312,7 @@ func (m model) destPopover() string {
 	}
 
 	rows := append([]string{title}, names...)
-	rows = append(rows, "", second, input, "", help)
+	rows = append(rows, sizeLine, "", second, input, "", help)
 	return boxStyle.Width(contentW + 2).Render(strings.Join(rows, "\n"))
 }
 
@@ -361,6 +363,25 @@ func countLabel(n int) string {
 		return "1 item"
 	}
 	return fmt.Sprintf("%d items", n)
+}
+
+// sizeSummary describes the download size: the summed size of file sources,
+// plus a count of any directories (whose recursive size isn't known up front).
+func sizeSummary(total int64, dirs int) string {
+	dirPart := ""
+	if dirs == 1 {
+		dirPart = "1 dir"
+	} else if dirs > 1 {
+		dirPart = fmt.Sprintf("%d dirs", dirs)
+	}
+	switch {
+	case dirPart == "":
+		return humanSize(total)
+	case total == 0:
+		return dirPart // directories only — no known file bytes to show
+	default:
+		return humanSize(total) + " + " + dirPart
+	}
 }
 
 func expandHomeUI(p string) string {

@@ -164,6 +164,7 @@ func (m model) updateFileFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.pendingSources = sources
+		m.pendingSize, m.pendingDirs = m.sourcesSize(sources)
 		m.destInput.SetValue(m.startDir)
 		m.destInput.Focus()
 		m.destInput.CursorEnd()
@@ -383,6 +384,28 @@ func (m model) selectionOrCurrent() []string {
 		}
 	}
 	return out
+}
+
+// sourcesSize sums the size of the file sources and counts directory sources.
+// Directory sizes are not summed: SFTP reports only the directory inode size,
+// not the recursive content size, so we surface the count instead.
+func (m model) sourcesSize(paths []string) (total int64, dirs int) {
+	byPath := make(map[string]sshx.Entry, len(m.entries))
+	for _, e := range m.entries {
+		byPath[e.Path] = e
+	}
+	for _, p := range paths {
+		e, ok := byPath[p]
+		if !ok {
+			continue
+		}
+		if e.IsDir {
+			dirs++
+		} else {
+			total += e.Size
+		}
+	}
+	return total, dirs
 }
 
 func (m *model) closeSession() {
