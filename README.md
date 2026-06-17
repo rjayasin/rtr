@@ -7,9 +7,6 @@ directories over SFTP, pick files or folders, and pull them down with `rsync`.
 Downloads run in the background while you keep browsing, with progress bars
 stacked at the bottom of the window.
 
-`rtr` does **remote → local** transfers — it pulls a remote source down to the
-machine you run it on.
-
 ## Install
 
 Requires Go 1.23+, plus `rsync` and `ssh` on your `PATH`.
