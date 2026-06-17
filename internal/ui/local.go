@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -13,9 +14,10 @@ import (
 
 // localEntry is one item in the local file pane's listing.
 type localEntry struct {
-	name  string
-	isDir bool
-	size  int64
+	name    string
+	isDir   bool
+	size    int64
+	modTime time.Time
 }
 
 // toggleLocal opens or closes the local file pane. Opening loads the launch
@@ -60,6 +62,22 @@ func (m model) updateLocalFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if parent := filepath.Dir(m.localCwd); parent != m.localCwd {
 			m.enterLocalDir(parent)
 		}
+	case "t":
+		// Sort by modification time; pressing t again flips newest/oldest.
+		if m.localSort == sortTimeDesc {
+			m.localSort = sortTimeAsc
+		} else {
+			m.localSort = sortTimeDesc
+		}
+		m.resortLocal()
+	case "n":
+		// Sort by name; pressing n again flips A→Z / Z→A.
+		if m.localSort == sortNameAsc {
+			m.localSort = sortNameDesc
+		} else {
+			m.localSort = sortNameAsc
+		}
+		m.resortLocal()
 	case "r":
 		m.loadLocal()
 	}
@@ -76,11 +94,19 @@ func (m model) defaultDest() string {
 	return m.startDir
 }
 
-// loadLocal reads localCwd into localEntries, resetting the cursor.
+// loadLocal reads localCwd into localEntries, sorted by the active mode, and
+// resets the cursor.
 func (m *model) loadLocal() {
 	entries, err := readLocalDir(m.localCwd)
 	m.localEntries = entries
 	m.localErr = err
+	sortLocalEntries(m.localEntries, m.localSort)
+	m.localCursor, m.localOffset = 0, 0
+}
+
+// resortLocal re-orders the current local listing and returns the cursor to top.
+func (m *model) resortLocal() {
+	sortLocalEntries(m.localEntries, m.localSort)
 	m.localCursor, m.localOffset = 0, 0
 }
 
@@ -110,8 +136,8 @@ func (m *model) clampLocalScroll() {
 	}
 }
 
-// readLocalDir lists a local directory, directories first then files, each
-// sorted case-insensitively by name.
+// readLocalDir lists a local directory (unsorted; the caller applies the chosen
+// sort mode).
 func readLocalDir(dir string) ([]localEntry, error) {
 	des, err := os.ReadDir(dir)
 	if err != nil {
@@ -120,18 +146,38 @@ func readLocalDir(dir string) ([]localEntry, error) {
 	out := make([]localEntry, 0, len(des))
 	for _, de := range des {
 		var size int64
+		var mod time.Time
 		if info, err := de.Info(); err == nil {
 			size = info.Size()
+			mod = info.ModTime()
 		}
-		out = append(out, localEntry{name: de.Name(), isDir: de.IsDir(), size: size})
+		out = append(out, localEntry{name: de.Name(), isDir: de.IsDir(), size: size, modTime: mod})
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].isDir != out[j].isDir {
-			return out[i].isDir
-		}
-		return strings.ToLower(out[i].name) < strings.ToLower(out[j].name)
-	})
 	return out, nil
+}
+
+// sortLocalEntries orders entries in place by the chosen key, with directories
+// and files interspersed — matching the remote pane's sortEntries semantics.
+func sortLocalEntries(entries []localEntry, mode sortMode) {
+	sort.SliceStable(entries, func(i, j int) bool {
+		a, b := entries[i], entries[j]
+		switch mode {
+		case sortTimeDesc:
+			if !a.modTime.Equal(b.modTime) {
+				return a.modTime.After(b.modTime) // newest first
+			}
+			return strings.ToLower(a.name) < strings.ToLower(b.name)
+		case sortTimeAsc:
+			if !a.modTime.Equal(b.modTime) {
+				return a.modTime.Before(b.modTime) // oldest first
+			}
+			return strings.ToLower(a.name) < strings.ToLower(b.name)
+		case sortNameDesc:
+			return strings.ToLower(a.name) > strings.ToLower(b.name)
+		default: // sortNameAsc
+			return strings.ToLower(a.name) < strings.ToLower(b.name)
+		}
+	})
 }
 
 // localListLines renders exactly rows lines of the local listing (padded with

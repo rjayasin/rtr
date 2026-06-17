@@ -538,7 +538,7 @@ func (m model) footer(baseHelp string) string {
 	case focusTransfers:
 		return "↑/↓ select • c cancel • x clear done • tab/esc files • q quit"
 	case focusLocal:
-		return "↑/↓ move • → open • ← up • r refresh • l/esc close • tab remote • q quit"
+		return fmt.Sprintf("↑/↓ move • → open • ← up • t/n sort:%s • r refresh • l/esc close • tab remote • q quit", m.localSort)
 	}
 	switch {
 	case m.localActive && len(m.transfers) > 0:
