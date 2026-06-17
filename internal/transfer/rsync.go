@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/rjayasin/rtr/internal/config"
 )
@@ -106,6 +108,20 @@ func Start(ctx context.Context, j Job) (<-chan Event, error) {
 		bin = "rsync"
 	}
 	cmd := exec.CommandContext(ctx, bin, BuildArgs(j)...)
+	// rsync forks worker processes and spawns ssh as the transport. Run it in its
+	// own process group and, on cancel, kill the whole group — otherwise the
+	// default cancel SIGKILLs only the main rsync process and its children keep
+	// transferring in the background. WaitDelay bounds how long Wait blocks if a
+	// child lingers holding the output pipe.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	cmd.WaitDelay = 5 * time.Second
+
 	// rsync writes progress to stdout and diagnostics to stderr; StdoutPipe sets
 	// cmd.Stdout to the pipe's write end, so pointing Stderr at it merges both
 	// streams into one reader and the UI log shows errors inline.
