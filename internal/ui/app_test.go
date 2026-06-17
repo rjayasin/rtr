@@ -340,6 +340,31 @@ func TestBrowserDownloadFlow(t *testing.T) {
 	}
 }
 
+// Enter on a directory with nothing selected opens the download popover for that
+// directory rather than navigating into it (→ is used to navigate).
+func TestBrowserEnterOnDirDownloads(t *testing.T) {
+	m := testModel()
+	m.screen = screenBrowser
+	m.cwd = "/volume1"
+	m.entries = []sshx.Entry{
+		{Name: "sub", Path: "/volume1/sub", IsDir: true},
+	}
+	m.brCursor = 0
+
+	updated, _ := m.updateBrowser(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(model)
+
+	if !m.destActive {
+		t.Fatal("expected destination popover to be active for directory")
+	}
+	if m.cwd != "/volume1" {
+		t.Errorf("cwd = %q, want unchanged /volume1 (enter should not navigate)", m.cwd)
+	}
+	if len(m.pendingSources) != 1 || m.pendingSources[0] != "/volume1/sub" {
+		t.Errorf("pendingSources = %v, want [/volume1/sub]", m.pendingSources)
+	}
+}
+
 // handleEvent updates the matching background transfer; progress keeps the wait
 // loop alive, Done stops it and marks completion.
 func TestHandleEvent(t *testing.T) {
