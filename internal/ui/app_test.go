@@ -61,13 +61,49 @@ func TestTransferFocusCancel(t *testing.T) {
 	cancelled := false
 	m.transfers = []*xfer{{id: 0, label: "f", cancel: func() { cancelled = true }}}
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
 	m = updated.(model)
 	if !cancelled {
 		t.Error("cancel func should have been called")
 	}
 	if !m.transfers[0].cancelled {
 		t.Error("transfer should be marked cancelled")
+	}
+	if cmd == nil {
+		t.Error("cancel should arm the linger timer to remove the row")
+	}
+}
+
+// After a transfer is cancelled, the linger timer (delivered as a dropXferMsg)
+// removes that row from the panel, leaving other transfers untouched and
+// returning focus to the file list when the panel empties.
+func TestCancelledTransferDropped(t *testing.T) {
+	m := testModel()
+	m.screen = screenBrowser
+	m.focus = focusTransfers
+	m.transfers = []*xfer{
+		{id: 0, label: "a", cancelled: true},
+		{id: 1, label: "b", cancel: func() {}},
+	}
+
+	// Dropping the cancelled transfer leaves the still-running one.
+	updated, _ := m.Update(dropXferMsg{id: 0})
+	m = updated.(model)
+	if len(m.transfers) != 1 || m.transfers[0].id != 1 {
+		t.Fatalf("transfers = %+v, want only id 1", m.transfers)
+	}
+	if m.focus != focusTransfers {
+		t.Error("focus should stay on the panel while a transfer remains")
+	}
+
+	// Dropping the last transfer empties the panel and returns focus to files.
+	updated, _ = m.Update(dropXferMsg{id: 1})
+	m = updated.(model)
+	if len(m.transfers) != 0 {
+		t.Fatalf("transfers = %+v, want empty", m.transfers)
+	}
+	if m.focus != focusFiles {
+		t.Error("focus should return to files when the panel empties")
 	}
 }
 

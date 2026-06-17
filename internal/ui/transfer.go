@@ -90,6 +90,18 @@ func (m *model) cancelTransfers() {
 	m.transfers = nil
 }
 
+// dropXfer removes the transfer with the given id from the panel, leaving the
+// rest in place. Used by the cancelled-transfer linger timer.
+func (m *model) dropXfer(id int) {
+	kept := m.transfers[:0]
+	for _, x := range m.transfers {
+		if x.id != id {
+			kept = append(kept, x)
+		}
+	}
+	m.transfers = kept
+}
+
 // clearFinished drops completed or cancelled transfers, leaving running ones.
 func (m *model) clearFinished() {
 	kept := m.transfers[:0]

@@ -8,6 +8,7 @@ import (
 	"context"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -136,7 +137,15 @@ type evMsg struct {
 	ev transfer.Event
 }
 
+// dropXferMsg removes a transfer from the panel; it fires on a timer after a
+// transfer is cancelled so the cancelled row clears itself.
+type dropXferMsg struct{ id int }
+
 type errMsg struct{ err error }
+
+// cancelledLinger is how long a cancelled transfer stays visible in the panel
+// before it is removed automatically.
+const cancelledLinger = 10 * time.Second
 
 // ── Commands ────────────────────────────────────────────────────────
 
@@ -176,6 +185,14 @@ func startCmd(id int, job transfer.Job) tea.Cmd {
 		}
 		return startedMsg{id: id, ch: ch, cancel: cancel}
 	}
+}
+
+// dropXferCmd schedules removal of a transfer from the panel after the linger
+// window, so cancelled transfers clear themselves without manual intervention.
+func dropXferCmd(id int) tea.Cmd {
+	return tea.Tick(cancelledLinger, func(time.Time) tea.Msg {
+		return dropXferMsg{id: id}
+	})
 }
 
 func waitEvCmd(id int, ch <-chan transfer.Event) tea.Cmd {
@@ -246,6 +263,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case evMsg:
 		return m.handleEvent(msg.id, msg.ev)
+
+	case dropXferMsg:
+		m.dropXfer(msg.id)
+		m.clampXferCursor()
+		if m.focus == focusTransfers && len(m.transfers) == 0 {
+			m.focus = focusFiles
+		}
+		return m, nil
 	}
 
 	// Global key handling (quit/confirm and the transfers panel) runs before the

@@ -151,13 +151,15 @@ func (m model) updateTransferFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.xferCursor++
 		}
 	case "c":
-		// Cancel the highlighted transfer if it is still running.
+		// Cancel the highlighted transfer if it is still running, then arm a
+		// timer to remove the cancelled row from the panel after a short linger.
 		x := m.transfers[m.xferCursor]
 		if !x.done && x.cancel != nil {
 			x.cancel()
 			x.cancel = nil
 			x.cancelled = true
 			m.persistTransfers()
+			return m, dropXferCmd(x.id)
 		}
 	case "x":
 		m.clearFinished()
