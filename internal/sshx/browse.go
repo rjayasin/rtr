@@ -88,6 +88,23 @@ func (s *Session) List(dir string) ([]Entry, error) {
 	return entries, nil
 }
 
+// PathSize returns the total size in bytes of a remote path: the file size for
+// a regular file, or the summed size of every file beneath it for a directory.
+// Unreadable entries are skipped rather than failing the whole walk.
+func (s *Session) PathSize(root string) (int64, error) {
+	var total int64
+	w := s.sftp.Walk(root)
+	for w.Step() {
+		if w.Err() != nil {
+			continue
+		}
+		if fi := w.Stat(); !fi.IsDir() {
+			total += fi.Size()
+		}
+	}
+	return total, nil
+}
+
 // Close tears down the SFTP and SSH connections.
 func (s *Session) Close() error {
 	if s.sftp != nil {
