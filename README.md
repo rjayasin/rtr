@@ -35,7 +35,7 @@ rtr --config-path        # print where the config lives
 |------------|------|
 | Bookmarks  | `↑/↓` move · `enter` connect · `n` new · `e` edit · `d` delete · `t` focus transfers · `q` quit |
 | Form       | `tab`/`↑↓` change field · `enter` save · `esc` cancel |
-| Browser    | `↑/↓` move · `→` open dir · `←` up · `x`/`space` select · `a` all · `c` clear · `s` toggle sort · `enter` download (or open dir) · `t` focus transfers · `r` refresh · `esc` back |
+| Browser    | `↑/↓` move · `→` open dir · `←` up · `x`/`space` select · `a` all · `c` clear · `s` toggle sort · `enter` download · `t` focus transfers · `r` refresh · `esc` back |
 | Transfers (`t`) | `↑/↓` select · `c` cancel highlighted · `x` clear finished · `t`/`esc` back |
 | Download popover | `enter` start (in background) · `esc` cancel |
 

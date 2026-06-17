@@ -115,14 +115,9 @@ func (m model) updateFileFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		return m, listCmd(m.session, m.cwd)
 	case "enter":
-		// On a directory with nothing selected, enter navigates into it;
-		// otherwise it opens the download prompt for the selection (or, if
-		// nothing is checked, the file under the cursor).
-		if len(m.selected) == 0 {
-			if e, ok := m.current(); ok && e.IsDir {
-				return m, listCmd(m.session, e.Path)
-			}
-		}
+		// Enter always opens the download prompt for the selection (or, if
+		// nothing is checked, the entry under the cursor — file or directory).
+		// Use → to navigate into a directory instead.
 		sources := m.selectionOrCurrent()
 		if len(sources) == 0 {
 			return m, nil
