@@ -31,6 +31,9 @@ jobs:
       - name: vet
         run: go vet ./...
 
+      - name: lint
+        run: make lint
+
       - name: build
         run: go build ./...
 
