@@ -57,8 +57,9 @@ type model struct {
 	destActive     bool
 	destInput      textinput.Model
 	pendingSources []string
-	pendingSize    int64 // total size of the file sources (dirs excluded)
-	pendingDirs    int   // number of directory sources (size not known up front)
+	pendingSize    int64 // total recursive size of the sources, once computed
+	sizeLoading    bool  // true while the background size walk is running
+	sizeReqID      int   // identifies the latest size request (stale results ignored)
 	startDir       string // working dir at launch; default download destination
 
 	// browser search (filters the listing by name, case-insensitive substring)
@@ -153,6 +154,13 @@ type evMsg struct {
 // transfer is cancelled so the cancelled row clears itself.
 type dropXferMsg struct{ id int }
 
+// sizeMsg carries the result of a background recursive-size walk for the
+// download popover. id matches the request so stale results are discarded.
+type sizeMsg struct {
+	id   int
+	size int64
+}
+
 type errMsg struct{ err error }
 
 // cancelledLinger is how long a cancelled transfer stays visible in the panel
@@ -199,6 +207,21 @@ func startCmd(id int, job transfer.Job) tea.Cmd {
 	}
 }
 
+// sizeCmd walks each source over SFTP and sums their sizes, posting a sizeMsg
+// when done. It runs in the background so the popover can render immediately.
+func sizeCmd(id int, s *sshx.Session, sources []string) tea.Cmd {
+	srcs := append([]string(nil), sources...) // snapshot; caller may mutate
+	return func() tea.Msg {
+		var total int64
+		for _, src := range srcs {
+			if n, err := s.PathSize(src); err == nil {
+				total += n
+			}
+		}
+		return sizeMsg{id: id, size: total}
+	}
+}
+
 // dropXferCmd schedules removal of a transfer from the panel after the linger
 // window, so cancelled transfers clear themselves without manual intervention.
 func dropXferCmd(id int) tea.Cmd {
@@ -239,6 +262,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
+
+	case sizeMsg:
+		if msg.id == m.sizeReqID {
+			m.pendingSize = msg.size
+			m.sizeLoading = false
+		}
+		return m, nil
 
 	case errMsg:
 		m.err = msg.err

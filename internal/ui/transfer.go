@@ -278,7 +278,14 @@ func (m model) quitConfirmBox() string {
 // destPopover renders the local-destination prompt as a bordered box that is
 // overlaid on top of the file list.
 func (m model) destPopover() string {
-	title := okStyle.Render("Download " + countLabel(len(m.pendingSources)))
+	// Size is shown inline with the title: "Download N items • <size>", with a
+	// spinner standing in for the size while the background walk is running.
+	title := okStyle.Render("Download "+countLabel(len(m.pendingSources))) + dimStyle.Render(" • ")
+	if m.sizeLoading {
+		title += m.spinner.View() + dimStyle.Render(" calculating…")
+	} else {
+		title += dimStyle.Render(humanSize(m.pendingSize))
+	}
 
 	// List every selected file by name (not its full remote path), one per line,
 	// so the user sees exactly what will be downloaded.
@@ -286,8 +293,6 @@ func (m model) destPopover() string {
 	for i, s := range m.pendingSources {
 		names[i] = path.Base(s)
 	}
-
-	sizeLine := dimStyle.Render("Total: " + sizeSummary(m.pendingSize, m.pendingDirs))
 
 	second := dimStyle.Render("Save to:")
 	if m.err != nil {
@@ -301,7 +306,7 @@ func (m model) destPopover() string {
 	// only when that cap is reached. boxStyle's width covers padding, so the text
 	// area is two columns narrower than the width we set.
 	textW := 0
-	for _, l := range append([]string{title, sizeLine, second, input, help}, names...) {
+	for _, l := range append([]string{title, second, input, help}, names...) {
 		if w := ansi.StringWidth(l); w > textW {
 			textW = w
 		}
@@ -312,7 +317,7 @@ func (m model) destPopover() string {
 	}
 
 	rows := append([]string{title}, names...)
-	rows = append(rows, sizeLine, "", second, input, "", help)
+	rows = append(rows, "", second, input, "", help)
 	return boxStyle.Width(contentW + 2).Render(strings.Join(rows, "\n"))
 }
 
@@ -363,25 +368,6 @@ func countLabel(n int) string {
 		return "1 item"
 	}
 	return fmt.Sprintf("%d items", n)
-}
-
-// sizeSummary describes the download size: the summed size of file sources,
-// plus a count of any directories (whose recursive size isn't known up front).
-func sizeSummary(total int64, dirs int) string {
-	dirPart := ""
-	if dirs == 1 {
-		dirPart = "1 dir"
-	} else if dirs > 1 {
-		dirPart = fmt.Sprintf("%d dirs", dirs)
-	}
-	switch {
-	case dirPart == "":
-		return humanSize(total)
-	case total == 0:
-		return dirPart // directories only — no known file bytes to show
-	default:
-		return humanSize(total) + " + " + dirPart
-	}
 }
 
 func expandHomeUI(p string) string {

@@ -528,42 +528,44 @@ func TestDestPopoverListsFilenames(t *testing.T) {
 	}
 }
 
-// sizeSummary reports file bytes, a directory count, or both.
-func TestSizeSummary(t *testing.T) {
-	cases := []struct {
-		total int64
-		dirs  int
-		want  string
-	}{
-		{0, 0, "0B"},
-		{2048, 0, "2.0K"},
-		{0, 1, "1 dir"},
-		{0, 3, "3 dirs"},
-		{2048, 2, "2.0K + 2 dirs"},
+// The download popover shows the size inline with the title once it is known,
+// and a "calculating…" indicator while the background walk runs.
+func TestDestPopoverShowsTotalSize(t *testing.T) {
+	m := browserWithEntries()
+	m.pendingSources = []string{"/volume1/report.pdf"}
+
+	m.sizeLoading = true
+	if loading := ansi.Strip(m.destPopover()); !strings.Contains(loading, "calculating") {
+		t.Errorf("popover should show a calculating indicator while loading\n%s", loading)
 	}
-	for _, tc := range cases {
-		if got := sizeSummary(tc.total, tc.dirs); got != tc.want {
-			t.Errorf("sizeSummary(%d, %d) = %q, want %q", tc.total, tc.dirs, got, tc.want)
-		}
+
+	m.sizeLoading = false
+	m.pendingSize = 1536 // 1.5K
+	view := ansi.Strip(m.destPopover())
+	if !strings.Contains(view, "Download 1 item • 1.5K") {
+		t.Errorf("popover should show size inline with title\n%s", view)
 	}
 }
 
-// The download popover shows the total size of the files being downloaded.
-func TestDestPopoverShowsTotalSize(t *testing.T) {
-	m := browserWithEntries() // report.pdf=10, photo-backup.zip=20, notes.txt=30, Photos=dir
-	m.selected = map[string]bool{
-		"/volume1/report.pdf":       true,
-		"/volume1/photo-backup.zip": true,
-	}
-	// Open the popover via enter so pendingSize is computed.
-	updated, _ := m.updateBrowser(tea.KeyMsg{Type: tea.KeyEnter})
+// A size result is applied only when its request id is current; stale walks
+// (from a popover that was closed/reopened) are ignored.
+func TestSizeMsgIgnoresStaleResults(t *testing.T) {
+	m := testModel()
+	m.sizeReqID = 2
+	m.sizeLoading = true
+
+	// Stale result from an earlier request is dropped.
+	updated, _ := m.Update(sizeMsg{id: 1, size: 999})
 	m = updated.(model)
-	if m.pendingSize != 30 {
-		t.Fatalf("pendingSize = %d, want 30", m.pendingSize)
+	if m.pendingSize == 999 || !m.sizeLoading {
+		t.Error("stale sizeMsg should be ignored")
 	}
-	view := ansi.Strip(m.destPopover())
-	if !strings.Contains(view, "Total: 30B") {
-		t.Errorf("popover missing total size\n%s", view)
+
+	// Current result is applied and clears the loading flag.
+	updated, _ = m.Update(sizeMsg{id: 2, size: 4096})
+	m = updated.(model)
+	if m.pendingSize != 4096 || m.sizeLoading {
+		t.Errorf("current sizeMsg not applied: size=%d loading=%v", m.pendingSize, m.sizeLoading)
 	}
 }
 
