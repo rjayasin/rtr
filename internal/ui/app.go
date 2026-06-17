@@ -18,6 +18,7 @@ import (
 	"github.com/rjayasin/rtr/internal/config"
 	"github.com/rjayasin/rtr/internal/sshx"
 	"github.com/rjayasin/rtr/internal/transfer"
+	"github.com/rjayasin/rtr/internal/update"
 )
 
 type screen int
@@ -77,10 +78,14 @@ type model struct {
 
 	status string
 	err    error
+
+	version      string // running build version, for the update check
+	updateLatest string // latest published version, set when a newer one exists
 }
 
-// New builds the initial model.
-func New(cfg *config.Config) model {
+// New builds the initial model. version is the running build's version, used for
+// the startup "update available" check.
+func New(cfg *config.Config, version string) model {
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
 	sp.Style = dimStyle
 
@@ -109,6 +114,7 @@ func New(cfg *config.Config) model {
 		progress:      progress.New(progress.WithDefaultGradient()),
 		startDir:      wd,
 		transfersPath: config.TransfersPath(cfg.Path()),
+		version:       version,
 	}
 
 	// Restore any transfers that were still running when rtr last exited; they
@@ -162,6 +168,9 @@ type sizeMsg struct {
 	id   int
 	size int64
 }
+
+// updateAvailableMsg reports that a newer rtr release exists.
+type updateAvailableMsg struct{ latest string }
 
 type errMsg struct{ err error }
 
@@ -224,6 +233,25 @@ func sizeCmd(id int, s *sshx.Session, sources []string) tea.Cmd {
 	}
 }
 
+// checkUpdateCmd looks up the latest release in the background and, only if a
+// newer version exists, reports it. Failures (offline, etc.) are swallowed so
+// the check never disrupts startup; it is skipped when RTR_NO_UPDATE_CHECK is
+// set or for non-release builds.
+func checkUpdateCmd(version string) tea.Cmd {
+	return func() tea.Msg {
+		if os.Getenv("RTR_NO_UPDATE_CHECK") != "" {
+			return nil
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		latest, newer, err := update.Latest(ctx, version)
+		if err != nil || !newer {
+			return nil
+		}
+		return updateAvailableMsg{latest: latest}
+	}
+}
+
 // dropXferCmd schedules removal of a transfer from the panel after the linger
 // window, so cancelled transfers clear themselves without manual intervention.
 func dropXferCmd(id int) tea.Cmd {
@@ -245,7 +273,7 @@ func waitEvCmd(id int, ch <-chan transfer.Event) tea.Cmd {
 // ── tea.Model ───────────────────────────────────────────────────────
 
 func (m model) Init() tea.Cmd {
-	cmds := []tea.Cmd{m.spinner.Tick}
+	cmds := []tea.Cmd{m.spinner.Tick, checkUpdateCmd(m.version)}
 	for _, x := range m.transfers { // resume transfers restored in New
 		cmds = append(cmds, startCmd(x.id, x.job(m.cfg.Rsync)))
 	}
@@ -270,6 +298,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pendingSize = msg.size
 			m.sizeLoading = false
 		}
+		return m, nil
+
+	case updateAvailableMsg:
+		m.updateLatest = msg.latest
 		return m, nil
 
 	case errMsg:
@@ -444,8 +476,8 @@ func (m model) View() string {
 }
 
 // Run launches the rtr TUI against the given config and blocks until exit.
-func Run(cfg *config.Config) error {
-	p := tea.NewProgram(New(cfg), tea.WithAltScreen())
+func Run(cfg *config.Config, version string) error {
+	p := tea.NewProgram(New(cfg, version), tea.WithAltScreen())
 	_, err := p.Run()
 	return err
 }

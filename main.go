@@ -6,27 +6,63 @@
 //
 //	rtr                  launch the TUI
 //	rtr config           open the config file in $EDITOR
+//	rtr update           update rtr to the latest release
+//	rtr version          print the version
 //	rtr --config-path    print the config file path
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/rjayasin/rtr/internal/config"
 	"github.com/rjayasin/rtr/internal/ui"
+	"github.com/rjayasin/rtr/internal/update"
 )
+
+// version is the build version, overridden via -ldflags "-X main.version=...".
+// It stays "dev" for plain `go build`/`go run` source builds.
+var version = "dev"
 
 func main() {
 	args := os.Args[1:]
-	if len(args) > 0 && args[0] == "config" {
-		runConfig(args[1:])
-		return
+	if len(args) > 0 {
+		switch args[0] {
+		case "config":
+			runConfig(args[1:])
+			return
+		case "update":
+			runUpdate()
+			return
+		case "version", "--version", "-v":
+			fmt.Printf("rtr %s\n", version)
+			return
+		}
 	}
 	runTUI(args)
+}
+
+// runUpdate implements `rtr update`: fetch the latest release and replace the
+// running binary in place if it is newer.
+func runUpdate() {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	fmt.Printf("rtr %s — checking for updates…\n", version)
+	v, updated, err := update.Apply(ctx, version)
+	if err != nil {
+		fail(err)
+	}
+	if !updated {
+		fmt.Printf("Already up to date (%s).\n", v)
+		return
+	}
+	fmt.Printf("Updated to %s.\n", v)
 }
 
 func runTUI(args []string) {
@@ -37,7 +73,9 @@ func runTUI(args []string) {
 		fmt.Fprint(os.Stderr,
 			"Usage:\n"+
 				"  rtr [flags]   launch the TUI\n"+
-				"  rtr config    open the config file in $EDITOR\n\n"+
+				"  rtr config    open the config file in $EDITOR\n"+
+				"  rtr update    update rtr to the latest release\n"+
+				"  rtr version   print the version\n\n"+
 				"Flags:\n")
 		fs.PrintDefaults()
 	}
@@ -51,7 +89,7 @@ func runTUI(args []string) {
 	if err != nil {
 		fail(err)
 	}
-	if err := ui.Run(cfg); err != nil {
+	if err := ui.Run(cfg, version); err != nil {
 		fail(err)
 	}
 }
