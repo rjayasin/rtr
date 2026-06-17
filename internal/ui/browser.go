@@ -67,8 +67,9 @@ func sortEntries(entries []sshx.Entry, mode sortMode) {
 type focusArea int
 
 const (
-	focusFiles focusArea = iota
-	focusTransfers
+	focusFiles     focusArea = iota // remote file list
+	focusLocal                      // local file pane
+	focusTransfers                  // background transfers panel
 )
 
 func (m model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -79,6 +80,9 @@ func (m model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateSearch(msg)
 	}
 	if key, ok := msg.(tea.KeyMsg); ok {
+		if m.focus == focusLocal {
+			return m.updateLocalFocus(key)
+		}
 		return m.updateFileFocus(key)
 	}
 	return m, nil
@@ -113,11 +117,11 @@ func (m model) updateFileFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.brCursor < len(m.filteredEntries())-1 {
 			m.brCursor++
 		}
-	case "right", "l":
+	case "right":
 		if e, ok := m.current(); ok && e.IsDir {
 			return m, listCmd(m.session, e.Path)
 		}
-		// On a file, →/l toggles selection for convenience.
+		// On a file, → toggles selection for convenience.
 		if e, ok := m.current(); ok {
 			m.toggle(e.Path)
 		}
@@ -170,7 +174,7 @@ func (m model) updateFileFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.sizeLoading = true
 			sizeCalc = sizeCmd(m.sizeReqID, m.session, sources)
 		}
-		m.destInput.SetValue(m.startDir)
+		m.destInput.SetValue(m.defaultDest())
 		m.destInput.Focus()
 		m.destInput.CursorEnd()
 		m.destActive = true
@@ -477,17 +481,18 @@ func (m model) viewBrowser() string {
 		label = m.session.Bookmark.Label()
 	}
 
-	lines := []string{
-		titleStyle.Render("rtr — " + label),
-		pathStyle.Render(m.cwd),
-		"",
-	}
+	lines := []string{titleStyle.Render("rtr — " + label)}
 
-	listLines := m.listLines(m.visibleRows())
-	if m.destActive {
-		listLines = overlayCenter(listLines, m.destPopover(), max(m.width, 1))
+	var body []string
+	if m.localActive {
+		body = m.browserColumns()
+	} else {
+		body = append([]string{pathStyle.Render(m.cwd), ""}, m.listLines(m.visibleRows())...)
 	}
-	lines = append(lines, listLines...)
+	if m.destActive {
+		body = overlayCenter(body, m.destPopover(), max(m.width, 1))
+	}
+	lines = append(lines, body...)
 
 	status := ""
 	if n := len(m.selected); n > 0 {
@@ -510,7 +515,7 @@ func (m model) viewBrowser() string {
 		lines = append(lines, dimStyle.Render(fmt.Sprintf("/%s", q)))
 	}
 	browserHelp := fmt.Sprintf(
-		"↑/↓ move • → open • ← up • x/space select • / search • enter download • t/n sort:%s • a all • c clear • r refresh • esc back",
+		"↑/↓ move • → open • ← up • x/space select • / search • l local • enter download • t/n sort:%s • a all • c clear • r refresh • esc back",
 		m.sortMode)
 	if m.searchActive {
 		browserHelp = "type to filter • enter accept • esc clear"
@@ -529,10 +534,18 @@ func dividerLine(w int) string {
 // footer renders the help line: the transfers-panel keys when that pane is
 // focused, otherwise the given screen help plus a hint to reach the panel.
 func (m model) footer(baseHelp string) string {
-	if m.focus == focusTransfers {
+	switch m.focus {
+	case focusTransfers:
 		return "↑/↓ select • c cancel • x clear done • tab/esc files • q quit"
+	case focusLocal:
+		return "↑/↓ move • → open • ← up • r refresh • l/esc close • tab remote • q quit"
 	}
-	if len(m.transfers) > 0 {
+	switch {
+	case m.localActive && len(m.transfers) > 0:
+		return baseHelp + " • tab panes"
+	case m.localActive:
+		return baseHelp + " • tab local"
+	case len(m.transfers) > 0:
 		return baseHelp + " • tab transfers"
 	}
 	return baseHelp
