@@ -279,24 +279,39 @@ func (m model) quitConfirmBox() string {
 // overlaid on top of the file list.
 func (m model) destPopover() string {
 	title := okStyle.Render("Download " + countLabel(len(m.pendingSources)))
-	what := dimStyle.Render(fmt.Sprintf("%d items", len(m.pendingSources)))
-	if len(m.pendingSources) == 1 {
-		what = dimStyle.Render(m.pendingSources[0])
+
+	// List every selected file by name (not its full remote path), one per line,
+	// so the user sees exactly what will be downloaded.
+	names := make([]string, len(m.pendingSources))
+	for i, s := range m.pendingSources {
+		names[i] = path.Base(s)
 	}
+
 	second := dimStyle.Render("Save to:")
 	if m.err != nil {
 		second = errStyle.Render(m.err.Error())
 	}
-	inner := strings.Join([]string{
-		title,
-		truncate(what, 56),
-		"",
-		second,
-		m.destInput.View(),
-		"",
-		helpStyle.Render("enter start • esc cancel"),
-	}, "\n")
-	return boxStyle.Width(clamp(m.width-10, 30, 64)).Render(inner)
+	input := m.destInput.View()
+	help := helpStyle.Render("enter start • esc cancel")
+
+	// The box widens to fit the longest line (file names included) and is capped
+	// to the terminal width, leaving room for the border; names are truncated
+	// only when that cap is reached. boxStyle's width covers padding, so the text
+	// area is two columns narrower than the width we set.
+	textW := 0
+	for _, l := range append([]string{title, second, input, help}, names...) {
+		if w := ansi.StringWidth(l); w > textW {
+			textW = w
+		}
+	}
+	contentW := clamp(textW, 26, max(m.width-4, 26))
+	for i, n := range names {
+		names[i] = dimStyle.Render(truncate(n, contentW))
+	}
+
+	rows := append([]string{title}, names...)
+	rows = append(rows, "", second, input, "", help)
+	return boxStyle.Width(contentW + 2).Render(strings.Join(rows, "\n"))
 }
 
 // overlayCenter composites the box over the middle rows of base, centered

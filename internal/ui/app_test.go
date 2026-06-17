@@ -317,14 +317,14 @@ func TestBrowserDownloadFlow(t *testing.T) {
 		{Name: "b.txt", Path: "/volume1/b.txt", Size: 2},
 	}
 	m.brCursor = 1
-	// space selects b.txt
-	updated, _ := m.updateBrowser(tea.KeyMsg{Type: tea.KeySpace})
+	// x selects b.txt
+	updated, _ := m.updateBrowser(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
 	m = updated.(model)
 	if !m.selected["/volume1/b.txt"] {
-		t.Fatal("space did not select current entry")
+		t.Fatal("x did not select current entry")
 	}
-	// d opens the destination popover (still on the browser screen)
-	updated, _ = m.updateBrowser(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	// enter opens the destination popover (still on the browser screen)
+	updated, _ = m.updateBrowser(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(model)
 	if !m.destActive {
 		t.Fatal("expected destination popover to be active")
@@ -363,6 +363,23 @@ func TestHandleEvent(t *testing.T) {
 	}
 	if cmd != nil {
 		t.Error("no follow-up command expected after Done")
+	}
+}
+
+// The destination popover lists every selected file by its base name (not the
+// full remote path), so a multi-file download shows each file.
+func TestDestPopoverListsFilenames(t *testing.T) {
+	m := testModel()
+	m.pendingSources = []string{"/remote/deep/path/alpha.txt", "/remote/other/beta.log"}
+	view := ansi.Strip(m.destPopover())
+
+	for _, want := range []string{"alpha.txt", "beta.log"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("popover missing %q\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "/remote/") {
+		t.Errorf("popover should show file names, not full paths\n%s", view)
 	}
 }
 

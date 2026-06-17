@@ -86,11 +86,11 @@ func (m model) updateFileFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.brCursor < len(m.entries)-1 {
 			m.brCursor++
 		}
-	case "right", "l", "enter":
+	case "right", "l":
 		if e, ok := m.current(); ok && e.IsDir {
 			return m, listCmd(m.session, e.Path)
 		}
-		// On a file, enter toggles selection for convenience.
+		// On a file, →/l toggles selection for convenience.
 		if e, ok := m.current(); ok {
 			m.toggle(e.Path)
 		}
@@ -99,7 +99,7 @@ func (m model) updateFileFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if parent != m.cwd {
 			return m, listCmd(m.session, parent)
 		}
-	case " ":
+	case "x", " ":
 		if e, ok := m.current(); ok {
 			m.toggle(e.Path)
 		}
@@ -114,9 +114,15 @@ func (m model) updateFileFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.resort()
 	case "r":
 		return m, listCmd(m.session, m.cwd)
-	case "x":
-		m.clearFinished()
-	case "d":
+	case "enter":
+		// On a directory with nothing selected, enter navigates into it;
+		// otherwise it opens the download prompt for the selection (or, if
+		// nothing is checked, the file under the cursor).
+		if len(m.selected) == 0 {
+			if e, ok := m.current(); ok && e.IsDir {
+				return m, listCmd(m.session, e.Path)
+			}
+		}
 		sources := m.selectionOrCurrent()
 		if len(sources) == 0 {
 			return m, nil
@@ -391,7 +397,7 @@ func (m model) viewBrowser() string {
 		lines = append(lines, strings.Split(panel, "\n")...)
 	}
 	browserHelp := fmt.Sprintf(
-		"↑/↓ move • → open • ← up • space select • d download • s sort:%s • a all • c clear • r refresh • esc back",
+		"↑/↓ move • → open • ← up • x/space select • enter download • s sort:%s • a all • c clear • r refresh • esc back",
 		m.sortMode)
 	lines = append(lines, helpStyle.Render(m.footer(browserHelp)))
 	return strings.Join(lines, "\n")
