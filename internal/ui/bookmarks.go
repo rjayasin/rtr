@@ -61,10 +61,10 @@ func (m model) updateBookmarks(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) viewBookmarks() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("rtr — bookmarks") + "\n\n")
+	fmt.Fprintf(&b, "%s\n\n", titleStyle.Render("rtr — bookmarks"))
 
 	if len(m.cfg.Bookmarks) == 0 {
-		b.WriteString(dimStyle.Render("No bookmarks yet. Press n to add one.") + "\n")
+		fmt.Fprintf(&b, "%s\n", dimStyle.Render("No bookmarks yet. Press n to add one."))
 	}
 	for i, bm := range m.cfg.Bookmarks {
 		cursor := "  "
@@ -73,20 +73,20 @@ func (m model) viewBookmarks() string {
 			cursor = cursorStyle.Render("▸ ")
 			line = cursorStyle.Render(fmt.Sprintf("%-22s ", bm.Label())) + dimStyle.Render(bm.Target()+":"+orDefault(bm.RemotePath, "~"))
 		}
-		b.WriteString(cursor + line + "\n")
+		fmt.Fprintf(&b, "%s%s\n", cursor, line)
 	}
 
 	b.WriteString("\n")
 	if m.connecting {
-		b.WriteString(m.spinner.View() + " " + m.status + "\n")
+		fmt.Fprintf(&b, "%s %s\n", m.spinner.View(), m.status)
 	}
 	if m.err != nil {
-		b.WriteString(errStyle.Render("error: ") + m.err.Error() + "\n")
+		fmt.Fprintf(&b, "%s%s\n", errStyle.Render("error: "), m.err.Error())
 	}
 	if panel := m.transfersView(); panel != "" {
-		b.WriteString(dividerLine(m.width) + "\n" + panel + "\n")
+		fmt.Fprintf(&b, "%s\n%s\n", dividerLine(m.width), panel)
 	}
-	b.WriteString("\n" + helpStyle.Render(m.footer(helpBookmarks)))
+	fmt.Fprintf(&b, "\n%s", helpStyle.Render(m.footer(helpBookmarks)))
 	return b.String()
 }
 
@@ -191,17 +191,17 @@ func (m model) viewForm() string {
 	if m.form.editIndex >= 0 {
 		title = "edit bookmark"
 	}
-	b.WriteString(titleStyle.Render("rtr — "+title) + "\n\n")
+	fmt.Fprintf(&b, "%s\n\n", titleStyle.Render("rtr — "+title))
 	for i, label := range formLabels {
 		marker := "  "
 		if i == m.form.focus {
 			marker = cursorStyle.Render("▸ ")
 		}
-		b.WriteString(fmt.Sprintf("%s%-16s %s\n", marker, label+":", m.form.inputs[i].View()))
+		fmt.Fprintf(&b, "%s%-16s %s\n", marker, label+":", m.form.inputs[i].View())
 	}
 	b.WriteString("\n")
 	if m.err != nil {
-		b.WriteString(errStyle.Render("error: ") + m.err.Error() + "\n\n")
+		fmt.Fprintf(&b, "%s%s\n\n", errStyle.Render("error: "), m.err.Error())
 	}
 	b.WriteString(helpStyle.Render(helpForm))
 	return b.String()

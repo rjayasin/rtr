@@ -74,5 +74,8 @@ func countLines(t *testing.T, path string) int {
 	for sc.Scan() {
 		n++
 	}
+	if err := sc.Err(); err != nil {
+		t.Fatalf("scan %s: %v", path, err)
+	}
 	return n
 }
