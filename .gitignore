@@ -7,3 +7,6 @@
 # Scratch
 *.tmp
 *.out
+
+# Editor
+/.vscode/
