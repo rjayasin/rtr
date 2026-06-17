@@ -385,6 +385,106 @@ func TestBrowserEnterOnDirDownloads(t *testing.T) {
 	}
 }
 
+// helper: build a browser model with a fixed listing for search tests.
+func browserWithEntries() model {
+	m := testModel()
+	m.screen = screenBrowser
+	m.cwd = "/volume1"
+	m.entries = []sshx.Entry{
+		{Name: "report.pdf", Path: "/volume1/report.pdf", Size: 10},
+		{Name: "Photos", Path: "/volume1/Photos", IsDir: true},
+		{Name: "photo-backup.zip", Path: "/volume1/photo-backup.zip", Size: 20},
+		{Name: "notes.txt", Path: "/volume1/notes.txt", Size: 30},
+	}
+	return m
+}
+
+// typing into the search field narrows the listing case-insensitively, matching
+// the query anywhere in the name.
+func TestSearchFiltersEntries(t *testing.T) {
+	m := browserWithEntries()
+
+	// '/' opens the search field.
+	updated, _ := m.updateBrowser(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(model)
+	if !m.searchActive {
+		t.Fatal("expected search to be active after /")
+	}
+
+	// Typing "photo" matches "Photos" (case-insensitive) and "photo-backup.zip".
+	for _, r := range "photo" {
+		updated, _ = m.updateBrowser(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = updated.(model)
+	}
+	got := m.filteredEntries()
+	if len(got) != 2 {
+		t.Fatalf("filtered = %d entries, want 2: %+v", len(got), got)
+	}
+	names := got[0].Name + "," + got[1].Name
+	if names != "Photos,photo-backup.zip" {
+		t.Errorf("filtered names = %q, want Photos,photo-backup.zip", names)
+	}
+}
+
+// enter accepts the filter: search field loses focus but the filter stays
+// applied so the list keeps showing matches.
+func TestSearchEnterReturnsToList(t *testing.T) {
+	m := browserWithEntries()
+	updated, _ := m.updateBrowser(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(model)
+	for _, r := range "note" {
+		updated, _ = m.updateBrowser(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = updated.(model)
+	}
+
+	updated, _ = m.updateBrowser(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(model)
+	if m.searchActive {
+		t.Error("enter should hand focus back to the list (search inactive)")
+	}
+	if m.searchInput.Value() != "note" {
+		t.Errorf("filter should persist after enter, got %q", m.searchInput.Value())
+	}
+	if len(m.filteredEntries()) != 1 {
+		t.Errorf("filter should still apply: %+v", m.filteredEntries())
+	}
+}
+
+// esc while searching clears the query and restores the full listing.
+func TestSearchEscClears(t *testing.T) {
+	m := browserWithEntries()
+	updated, _ := m.updateBrowser(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(model)
+	for _, r := range "note" {
+		updated, _ = m.updateBrowser(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = updated.(model)
+	}
+
+	updated, _ = m.updateBrowser(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(model)
+	if m.searchActive {
+		t.Error("esc should close the search field")
+	}
+	if m.searchInput.Value() != "" {
+		t.Errorf("esc should clear the query, got %q", m.searchInput.Value())
+	}
+	if len(m.filteredEntries()) != len(m.entries) {
+		t.Errorf("full listing should be restored: %d of %d", len(m.filteredEntries()), len(m.entries))
+	}
+}
+
+// The status line omits the selection count entirely when nothing is selected.
+func TestNoSelectionHidesCount(t *testing.T) {
+	m := browserWithEntries()
+	if strings.Contains(ansi.Strip(m.View()), "0 selected") {
+		t.Error("view should not show '0 selected' when nothing is selected")
+	}
+	m.selected["/volume1/notes.txt"] = true
+	if !strings.Contains(ansi.Strip(m.View()), "1 selected") {
+		t.Error("view should show '1 selected' once an entry is selected")
+	}
+}
+
 // handleEvent updates the matching background transfer; progress keeps the wait
 // loop alive, Done stops it and marks completion.
 func TestHandleEvent(t *testing.T) {
