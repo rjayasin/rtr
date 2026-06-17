@@ -528,6 +528,45 @@ func TestDestPopoverListsFilenames(t *testing.T) {
 	}
 }
 
+// sizeSummary reports file bytes, a directory count, or both.
+func TestSizeSummary(t *testing.T) {
+	cases := []struct {
+		total int64
+		dirs  int
+		want  string
+	}{
+		{0, 0, "0B"},
+		{2048, 0, "2.0K"},
+		{0, 1, "1 dir"},
+		{0, 3, "3 dirs"},
+		{2048, 2, "2.0K + 2 dirs"},
+	}
+	for _, tc := range cases {
+		if got := sizeSummary(tc.total, tc.dirs); got != tc.want {
+			t.Errorf("sizeSummary(%d, %d) = %q, want %q", tc.total, tc.dirs, got, tc.want)
+		}
+	}
+}
+
+// The download popover shows the total size of the files being downloaded.
+func TestDestPopoverShowsTotalSize(t *testing.T) {
+	m := browserWithEntries() // report.pdf=10, photo-backup.zip=20, notes.txt=30, Photos=dir
+	m.selected = map[string]bool{
+		"/volume1/report.pdf":       true,
+		"/volume1/photo-backup.zip": true,
+	}
+	// Open the popover via enter so pendingSize is computed.
+	updated, _ := m.updateBrowser(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(model)
+	if m.pendingSize != 30 {
+		t.Fatalf("pendingSize = %d, want 30", m.pendingSize)
+	}
+	view := ansi.Strip(m.destPopover())
+	if !strings.Contains(view, "Total: 30B") {
+		t.Errorf("popover missing total size\n%s", view)
+	}
+}
+
 // Confirming the popover queues a background transfer and returns to browsing.
 func TestPopoverEnterQueuesTransfer(t *testing.T) {
 	m := testModel()
