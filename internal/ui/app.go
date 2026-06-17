@@ -237,6 +237,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.session = msg.session
 		m.cwd = msg.dir
 		m.entries = msg.entries
+		m.sortMode = sortTimeDesc // default each connection to newest-first
 		sortEntries(m.entries, m.sortMode)
 		m.brCursor, m.brOffset = 0, 0
 		m.connecting = false
@@ -328,7 +329,7 @@ func (m model) handleGlobalKey(key tea.KeyMsg) (model, tea.Cmd, bool) {
 		return m, nil, false
 	}
 
-	if ks == "t" && len(m.transfers) > 0 {
+	if ks == "tab" && len(m.transfers) > 0 {
 		if m.focus == focusFiles {
 			m.focus = focusTransfers
 			m.clampXferCursor()
