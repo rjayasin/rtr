@@ -33,10 +33,10 @@ rtr --config-path        # print where the config lives
 
 | Screen     | Keys |
 |------------|------|
-| Bookmarks  | `↑/↓` move · `enter` connect · `n` new · `e` edit · `d` delete · `t` focus transfers · `q` quit |
+| Bookmarks  | `↑/↓` move · `enter` connect · `n` new · `e` edit · `d` delete · `tab` focus transfers · `q` quit |
 | Form       | `tab`/`↑↓` change field · `enter` save · `esc` cancel |
-| Browser    | `↑/↓` move · `→` open dir · `←` up · `x`/`space` select · `a` all · `c` clear · `s` toggle sort · `enter` download · `t` focus transfers · `r` refresh · `esc` back |
-| Transfers (`t`) | `↑/↓` select · `c` cancel highlighted · `x` clear finished · `t`/`esc` back |
+| Browser    | `↑/↓` move · `→` open dir · `←` up · `x`/`space` select · `a` all · `c` clear · `t` sort by time (toggle newest/oldest) · `n` sort by name (toggle A→Z/Z→A) · `enter` download · `tab` focus transfers · `r` refresh · `esc` back |
+| Transfers (`tab`) | `↑/↓` select · `c` cancel highlighted · `x` clear finished · `tab`/`esc` back |
 | Download popover | `enter` start (in background) · `esc` cancel |
 
 In-progress downloads are recorded in `transfers.json` (beside the config) and

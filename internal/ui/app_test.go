@@ -269,12 +269,15 @@ func TestSortEntries(t *testing.T) {
 		mode sortMode
 		want string
 	}{
-		// name: all entries alphabetical, dirs and files interspersed
+		// name ascending: all entries alphabetical, dirs and files interspersed
 		// ("a.txt" < "adir" since '.' < 'd').
-		{"name", sortName, "a.txt,adir,b.txt,c.txt,zdir"},
-		// time: newest→oldest across all entries (zdir t+5, a t+3, b t+2,
-		// adir t+1, c t+0).
-		{"time", sortTime, "zdir,a.txt,b.txt,adir,c.txt"},
+		{"name asc", sortNameAsc, "a.txt,adir,b.txt,c.txt,zdir"},
+		// name descending: reverse alphabetical.
+		{"name desc", sortNameDesc, "zdir,c.txt,b.txt,adir,a.txt"},
+		// time descending: newest→oldest (zdir t+5, a t+3, b t+2, adir t+1, c t+0).
+		{"time desc", sortTimeDesc, "zdir,a.txt,b.txt,adir,c.txt"},
+		// time ascending: oldest→newest.
+		{"time asc", sortTimeAsc, "c.txt,adir,b.txt,a.txt,zdir"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -287,22 +290,39 @@ func TestSortEntries(t *testing.T) {
 	}
 }
 
-// 's' toggles the sort mode between name and time.
+// 't' selects time sorting and flips newest/oldest on repeat; 'n' selects name
+// sorting and flips A→Z / Z→A on repeat. Switching key resets to that key's
+// primary direction.
 func TestSortShortcuts(t *testing.T) {
 	m := testModel()
 	m.screen = screenBrowser
-	if m.sortMode != sortName {
-		t.Fatalf("initial mode = %v, want name", m.sortMode)
+	if m.sortMode != sortTimeDesc {
+		t.Fatalf("initial mode = %v, want time desc (newest first)", m.sortMode)
 	}
-	updated, _ := m.updateBrowser(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
-	m = updated.(model)
-	if m.sortMode != sortTime {
-		t.Errorf("after first s, mode = %v, want time", m.sortMode)
+	press := func(r string) {
+		updated, _ := m.updateBrowser(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(r)})
+		m = updated.(model)
 	}
-	updated, _ = m.updateBrowser(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
-	m = updated.(model)
-	if m.sortMode != sortName {
-		t.Errorf("after second s, mode = %v, want name", m.sortMode)
+
+	press("t") // already newest-first → flip to oldest-first
+	if m.sortMode != sortTimeAsc {
+		t.Errorf("after t, mode = %v, want time asc", m.sortMode)
+	}
+	press("t") // flip back to newest-first
+	if m.sortMode != sortTimeDesc {
+		t.Errorf("after second t, mode = %v, want time desc", m.sortMode)
+	}
+	press("n") // switch to name → A→Z
+	if m.sortMode != sortNameAsc {
+		t.Errorf("after n, mode = %v, want name asc", m.sortMode)
+	}
+	press("n") // flip to Z→A
+	if m.sortMode != sortNameDesc {
+		t.Errorf("after second n, mode = %v, want name desc", m.sortMode)
+	}
+	press("t") // switch back to time → newest-first
+	if m.sortMode != sortTimeDesc {
+		t.Errorf("after t from name, mode = %v, want time desc", m.sortMode)
 	}
 }
 

@@ -13,39 +13,52 @@ import (
 	"github.com/rjayasin/rtr/internal/transfer"
 )
 
-// sortMode is the remote listing order, toggled with `s`. Directories and files
+// sortMode is the remote listing order. `t` cycles the time modes and `n`
+// cycles the name modes (each press flips direction). Directories and files
 // are interspersed (sorted together by the key, not grouped by type).
 type sortMode int
 
 const (
-	sortName sortMode = iota // alphabetical
-	sortTime                 // most-recently-modified first
+	sortTimeDesc sortMode = iota // most-recently-modified first (default)
+	sortTimeAsc                  // oldest-modified first
+	sortNameAsc                  // A → Z
+	sortNameDesc                 // Z → A
 )
 
 func (s sortMode) String() string {
-	if s == sortTime {
-		return "time"
+	switch s {
+	case sortTimeDesc:
+		return "newest"
+	case sortTimeAsc:
+		return "oldest"
+	case sortNameDesc:
+		return "name ↓"
+	default:
+		return "name ↑"
 	}
-	return "name"
-}
-
-// toggled returns the other sort mode.
-func (s sortMode) toggled() sortMode {
-	if s == sortName {
-		return sortTime
-	}
-	return sortName
 }
 
 // sortEntries orders entries in place by the chosen key, with directories and
-// files interspersed (name is the tie-break for time sorting).
+// files interspersed (name is the tie-break for the time modes).
 func sortEntries(entries []sshx.Entry, mode sortMode) {
 	sort.SliceStable(entries, func(i, j int) bool {
 		a, b := entries[i], entries[j]
-		if mode == sortTime && !a.ModTime.Equal(b.ModTime) {
-			return a.ModTime.After(b.ModTime) // newest first
+		switch mode {
+		case sortTimeDesc:
+			if !a.ModTime.Equal(b.ModTime) {
+				return a.ModTime.After(b.ModTime) // newest first
+			}
+			return strings.ToLower(a.Name) < strings.ToLower(b.Name)
+		case sortTimeAsc:
+			if !a.ModTime.Equal(b.ModTime) {
+				return a.ModTime.Before(b.ModTime) // oldest first
+			}
+			return strings.ToLower(a.Name) < strings.ToLower(b.Name)
+		case sortNameDesc:
+			return strings.ToLower(a.Name) > strings.ToLower(b.Name)
+		default: // sortNameAsc
+			return strings.ToLower(a.Name) < strings.ToLower(b.Name)
 		}
-		return strings.ToLower(a.Name) < strings.ToLower(b.Name)
 	})
 }
 
@@ -67,8 +80,8 @@ func (m model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// updateFileFocus handles keys while the file list has scroll focus. Quit, the
-// transfers panel, and the `t` toggle are handled globally in handleGlobalKey.
+// updateFileFocus handles keys while the file list has scroll focus. Quit and
+// the transfers panel (tab toggle) are handled globally in handleGlobalKey.
 func (m model) updateFileFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case "esc":
@@ -109,8 +122,21 @@ func (m model) updateFileFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "c":
 		m.selected = map[string]bool{}
-	case "s":
-		m.sortMode = m.sortMode.toggled()
+	case "t":
+		// Sort by modification time; pressing t again flips newest/oldest.
+		if m.sortMode == sortTimeDesc {
+			m.sortMode = sortTimeAsc
+		} else {
+			m.sortMode = sortTimeDesc
+		}
+		m.resort()
+	case "n":
+		// Sort by name; pressing n again flips A→Z / Z→A.
+		if m.sortMode == sortNameAsc {
+			m.sortMode = sortNameDesc
+		} else {
+			m.sortMode = sortNameAsc
+		}
 		m.resort()
 	case "r":
 		return m, listCmd(m.session, m.cwd)
@@ -392,7 +418,7 @@ func (m model) viewBrowser() string {
 		lines = append(lines, strings.Split(panel, "\n")...)
 	}
 	browserHelp := fmt.Sprintf(
-		"↑/↓ move • → open • ← up • x/space select • enter download • s sort:%s • a all • c clear • r refresh • esc back",
+		"↑/↓ move • → open • ← up • x/space select • enter download • t/n sort:%s • a all • c clear • r refresh • esc back",
 		m.sortMode)
 	lines = append(lines, helpStyle.Render(m.footer(browserHelp)))
 	return strings.Join(lines, "\n")
@@ -409,10 +435,10 @@ func dividerLine(w int) string {
 // focused, otherwise the given screen help plus a hint to reach the panel.
 func (m model) footer(baseHelp string) string {
 	if m.focus == focusTransfers {
-		return "↑/↓ select • c cancel • x clear done • t/esc files • q quit"
+		return "↑/↓ select • c cancel • x clear done • tab/esc files • q quit"
 	}
 	if len(m.transfers) > 0 {
-		return baseHelp + " • t transfers"
+		return baseHelp + " • tab transfers"
 	}
 	return baseHelp
 }
