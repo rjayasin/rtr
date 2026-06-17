@@ -57,9 +57,9 @@ type model struct {
 	destActive     bool
 	destInput      textinput.Model
 	pendingSources []string
-	pendingSize    int64 // total recursive size of the sources, once computed
-	sizeLoading    bool  // true while the background size walk is running
-	sizeReqID      int   // identifies the latest size request (stale results ignored)
+	pendingSize    int64  // total recursive size of the sources, once computed
+	sizeLoading    bool   // true while the background size walk is running
+	sizeReqID      int    // identifies the latest size request (stale results ignored)
 	startDir       string // working dir at launch; default download destination
 
 	// browser search (filters the listing by name, case-insensitive substring)
@@ -67,11 +67,13 @@ type model struct {
 	searchInput  textinput.Model
 
 	// background transfers, shown stacked at the bottom of every screen
-	progress      progress.Model
-	transfers     []*xfer
-	nextXfer      int
-	transfersPath string // resume file (transfers.json beside the config)
-	confirmQuit   bool   // showing the "quit with downloads running?" prompt
+	progress          progress.Model
+	transfers         []*xfer
+	nextXfer          int
+	transfersPath     string // resume file (transfers.json beside the config)
+	confirmQuit       bool   // showing the "quit with downloads running?" prompt
+	confirmDisconnect bool   // showing the "disconnect from host?" prompt
+	disconnectChoice  int    // selected button in the disconnect prompt: 0=Yes, 1=No
 
 	status string
 	err    error
@@ -360,6 +362,27 @@ func (m model) handleGlobalKey(key tea.KeyMsg) (model, tea.Cmd, bool) {
 		}
 	}
 
+	if m.confirmDisconnect {
+		switch ks {
+		case "left", "right", "tab":
+			m.disconnectChoice ^= 1 // toggle between Yes (0) and No (1)
+			return m, nil, true
+		case "enter":
+			if m.disconnectChoice == 0 {
+				return m.doDisconnect(), nil, true
+			}
+			m.confirmDisconnect = false
+			return m, nil, true
+		case "y", "Y":
+			return m.doDisconnect(), nil, true
+		case "n", "N", "esc":
+			m.confirmDisconnect = false
+			return m, nil, true
+		default:
+			return m, nil, true // modal: ignore other keys while confirming
+		}
+	}
+
 	if ks == "ctrl+c" || (ks == "q" && !textMode) {
 		if m.activeTransfers() > 0 {
 			m.confirmQuit = true
@@ -389,6 +412,16 @@ func (m model) handleGlobalKey(key tea.KeyMsg) (model, tea.Cmd, bool) {
 	return m, nil, false
 }
 
+// doDisconnect closes the session and returns to the bookmarks screen. Downloads
+// keep running; they show on the bookmarks screen and resume on the next launch.
+func (m model) doDisconnect() model {
+	m.confirmDisconnect = false
+	m.closeSession()
+	m.focus = focusFiles
+	m.screen = screenBookmarks
+	return m
+}
+
 func (m model) View() string {
 	var v string
 	switch m.screen {
@@ -401,6 +434,10 @@ func (m model) View() string {
 	}
 	if m.confirmQuit {
 		lines := overlayCenter(strings.Split(v, "\n"), m.quitConfirmBox(), max(m.width, 1))
+		v = strings.Join(lines, "\n")
+	}
+	if m.confirmDisconnect {
+		lines := overlayCenter(strings.Split(v, "\n"), m.disconnectConfirmBox(), max(m.width, 1))
 		v = strings.Join(lines, "\n")
 	}
 	return v
