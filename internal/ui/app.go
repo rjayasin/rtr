@@ -75,6 +75,7 @@ type model struct {
 	localCursor  int
 	localOffset  int
 	localErr     error
+	localSort    sortMode // defaults to sortTimeDesc (newest first), like the remote pane
 
 	// background transfers, shown stacked at the bottom of every screen
 	progress          progress.Model

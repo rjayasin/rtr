@@ -626,7 +626,12 @@ func TestLocalPane(t *testing.T) {
 		t.Errorf("tab should move focus back to local, got %v", m.focus)
 	}
 
-	// Cursor starts on "sub" (dirs first); → descends into it.
+	// Move the cursor onto "sub" and → descends into it.
+	for i, e := range m.localEntries {
+		if e.name == "sub" {
+			m.localCursor = i
+		}
+	}
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
 	m = updated.(model)
 	if m.localCwd != filepath.Join(dir, "sub") {
@@ -638,6 +643,62 @@ func TestLocalPane(t *testing.T) {
 	m = updated.(model)
 	if m.localActive || m.focus != focusFiles {
 		t.Errorf("l should close the pane and focus remote (active=%v focus=%v)", m.localActive, m.focus)
+	}
+}
+
+// The local pane supports the same t/n sorting as the remote pane: t toggles
+// time newest/oldest, n toggles name A→Z / Z→A, defaulting to newest-first.
+func TestLocalPaneSorting(t *testing.T) {
+	dir := t.TempDir()
+	mk := func(name string, age time.Duration) {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		mt := time.Now().Add(-age)
+		if err := os.Chtimes(p, mt, mt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("a.txt", 1*time.Hour) // middle age
+	mk("b.txt", 0)           // newest
+	mk("c.txt", 2*time.Hour) // oldest
+
+	names := func(m model) string {
+		var n []string
+		for _, e := range m.localEntries {
+			n = append(n, e.name)
+		}
+		return strings.Join(n, ",")
+	}
+
+	m := testModel()
+	m.screen = screenBrowser
+	m.startDir = dir
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	m = updated.(model)
+
+	// Default: newest first.
+	if got := names(m); got != "b.txt,a.txt,c.txt" {
+		t.Errorf("default order = %q, want b.txt,a.txt,c.txt", got)
+	}
+	// t flips to oldest first.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+	m = updated.(model)
+	if got := names(m); got != "c.txt,a.txt,b.txt" {
+		t.Errorf("after t order = %q, want c.txt,a.txt,b.txt", got)
+	}
+	// n switches to name A→Z.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	m = updated.(model)
+	if got := names(m); got != "a.txt,b.txt,c.txt" {
+		t.Errorf("after n order = %q, want a.txt,b.txt,c.txt", got)
+	}
+	// n again flips to Z→A.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	m = updated.(model)
+	if got := names(m); got != "c.txt,b.txt,a.txt" {
+		t.Errorf("after second n order = %q, want c.txt,b.txt,a.txt", got)
 	}
 }
 
