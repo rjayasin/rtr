@@ -7,6 +7,7 @@ package ui
 import (
 	"context"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -47,6 +48,7 @@ type model struct {
 	entries    []sshx.Entry
 	brCursor   int
 	brOffset   int
+	scrollMem  map[string]int // remembered scroll offset per directory, restored on the way back up
 	selected   map[string]bool
 	connecting bool
 	spinner    spinner.Model
@@ -140,6 +142,7 @@ func New(cfg *config.Config, version string) model {
 		cfg:              cfg,
 		screen:           screenBookmarks,
 		selected:         map[string]bool{},
+		scrollMem:        map[string]int{},
 		spinner:          sp,
 		destInput:        di,
 		searchInput:      si,
@@ -356,11 +359,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case listedMsg:
+		prev := m.cwd
+		if prev != msg.dir {
+			m.scrollMem[prev] = m.brOffset // remember where we were, to restore on return
+		}
 		m.cwd = msg.dir
 		m.entries = msg.entries
 		sortEntries(m.entries, m.sortMode)
 		m.clearSearch()
 		m.brCursor, m.brOffset = 0, 0
+		// When stepping up a level, land the cursor on the directory we came
+		// from and restore the scroll position we had in this directory before.
+		if path.Dir(prev) == msg.dir && prev != msg.dir {
+			child := path.Base(prev)
+			for i, e := range m.displayedEntries() {
+				if e.Name == child {
+					m.brCursor = i
+					break
+				}
+			}
+			m.brOffset = m.scrollMem[msg.dir]
+			m.clampScroll()
+		}
 		m.err = nil
 		return m, nil
 
