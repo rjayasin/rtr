@@ -159,6 +159,11 @@ func (m model) updateFileFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.sortMode = sortNameAsc
 		}
 		m.resort()
+	case ".":
+		// Toggle dot-file visibility (shared with the local pane); start from the
+		// top since the visible set changes.
+		m.showHidden = !m.showHidden
+		m.brCursor, m.brOffset = 0, 0
 	case "r":
 		return m, listCmd(m.session, m.cwd)
 	case "enter":
@@ -326,18 +331,20 @@ func (m *model) clearSearch() {
 	m.brCursor, m.brOffset = 0, 0
 }
 
-// filteredEntries returns the entries matching the current search query
-// (case-insensitive substring on the name), or all entries when no query is set.
+// filteredEntries returns the entries to display: dot files are dropped unless
+// showHidden is on, and the remainder is narrowed to the current search query
+// (case-insensitive substring on the name).
 func (m model) filteredEntries() []sshx.Entry {
 	q := strings.ToLower(strings.TrimSpace(m.searchInput.Value()))
-	if q == "" {
-		return m.entries
-	}
 	out := make([]sshx.Entry, 0, len(m.entries))
 	for _, e := range m.entries {
-		if strings.Contains(strings.ToLower(e.Name), q) {
-			out = append(out, e)
+		if !m.showHidden && strings.HasPrefix(e.Name, ".") {
+			continue
 		}
+		if q != "" && !strings.Contains(strings.ToLower(e.Name), q) {
+			continue
+		}
+		out = append(out, e)
 	}
 	return out
 }
@@ -517,8 +524,8 @@ func (m model) viewBrowser() string {
 		lines = append(lines, m.localSearchInput.View())
 	}
 	browserHelp := fmt.Sprintf(
-		"↑/↓ move • → open • ← up • x/space select • / search • l local • enter download • t/n sort:%s • a all • c clear • r refresh • esc back",
-		m.sortMode)
+		"↑/↓ move • → open • ← up • x/space select • / search • l local • enter download • t/n sort:%s%s • a all • c clear • r refresh • esc back",
+		m.sortMode, m.hiddenHint())
 	help := m.footer(browserHelp)
 	if m.searchActive || m.localSearchActive {
 		help = "type to filter • enter accept • esc clear"
@@ -551,7 +558,7 @@ func (m model) footer(baseHelp string) string {
 	case focusTransfers:
 		return "↑/↓ select • c cancel • x clear done • tab/esc files • q quit"
 	case focusLocal:
-		return fmt.Sprintf("↑/↓ move • → open • ← up • / search • t/n sort:%s%s • r refresh • l/esc close • tab remote • q quit", m.localSort, m.compareHint())
+		return fmt.Sprintf("↑/↓ move • → open • ← up • / search • t/n sort:%s%s%s • r refresh • l/esc close • tab remote • q quit", m.localSort, m.hiddenHint(), m.compareHint())
 	}
 	switch {
 	case m.localActive && len(m.transfers) > 0:
@@ -574,6 +581,14 @@ func (m model) compareHint() string {
 		return " • ~ compare:on"
 	}
 	return " • ~ compare"
+}
+
+// hiddenHint shows the `.` dot-file toggle and its state.
+func (m model) hiddenHint() string {
+	if m.showHidden {
+		return " • . hidden:on"
+	}
+	return " • . hidden"
 }
 
 func humanSize(n int64) string {
