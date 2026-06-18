@@ -61,7 +61,7 @@ func (m model) updateBookmarks(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) viewBookmarks() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n", titleStyle.Render("rtr — bookmarks"))
+	fmt.Fprintf(&b, "%s\n", titleStyle.Render("rtr "+displayVersion(m.version)+" — bookmarks"))
 	if m.updateLatest != "" {
 		fmt.Fprintf(&b, "%s\n", okStyle.Render(fmt.Sprintf("update available: %s — run `rtr update`", m.updateLatest)))
 	}
