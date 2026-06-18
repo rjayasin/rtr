@@ -428,9 +428,9 @@ func (m *model) clampScroll() {
 }
 
 func (m model) visibleRows() int {
-	// chrome: title + breadcrumb + blank + status + footer = 5 lines. When there
-	// are transfers, add the divider plus the panel.
-	chrome := 5
+	// chrome: breadcrumb + blank + status + footer = 4 lines (the title shares the
+	// footer row). When there are transfers, add the divider plus the panel.
+	chrome := 4
 	if len(m.transfers) > 0 {
 		chrome += 1 + m.transfersHeight() // divider + panel
 	}
@@ -466,15 +466,26 @@ func (m model) listLines(rows int) []string {
 	}
 	for i := m.brOffset; i < end; i++ {
 		e := entries[i]
+		cursorRow := i == m.brCursor && m.focus == focusFiles
+		marker := "  "
+		if cursorRow {
+			marker = cursorStyle.Render("➤ ")
+		}
 		check := "[ ]"
 		if m.selected[e.Path] {
-			check = selectedStyle.Render("[x]")
+			check = "[x]"
 		}
-		cursor := "  "
-		if i == m.brCursor && m.focus == focusFiles {
-			cursor = cursorStyle.Render("▸ ")
+		switch {
+		case cursorRow:
+			check = cursorCellStyle(e.IsDir).Render(check)
+		case m.selected[e.Path]:
+			check = selectedStyle.Render(check)
 		}
-		out = append(out, fmt.Sprintf("%s%s %s  %s", cursor, check, sizeCell(e.IsDir, common[e.Name], e.Size), nameCell(e.Name, e.IsDir, common[e.Name])))
+		out = append(out, fmt.Sprintf("%s%s %s  %s",
+			marker,
+			check,
+			sizeCell(e.IsDir, common[e.Name], e.Size, cursorRow),
+			nameCell(e.Name, e.IsDir, common[e.Name], cursorRow)))
 	}
 	for len(out) < rows {
 		out = append(out, "")
@@ -488,13 +499,13 @@ func (m model) viewBrowser() string {
 		label = m.session.Bookmark.Label()
 	}
 
-	lines := []string{titleStyle.Render("rtr — " + label)}
+	var lines []string
 
 	var body []string
 	if m.localActive {
 		body = m.browserColumns()
 	} else {
-		breadcrumb := pathStyle.Render(m.cwd) + searchSuffix(m.searchActive, m.searchInput.Value())
+		breadcrumb := m.sectionLabel(focusFiles, "remote") + dimStyle.Render(" "+m.cwd) + searchSuffix(m.searchActive, m.searchInput.Value())
 		body = append([]string{breadcrumb, ""}, m.listLines(m.visibleRows())...)
 	}
 	if m.destActive {
@@ -509,7 +520,13 @@ func (m model) viewBrowser() string {
 	if m.err != nil && !m.destActive {
 		status = errStyle.Render("error: ") + m.err.Error()
 	}
-	lines = append(lines, dimStyle.Render(status))
+	// The connection (bookmark) sits at the far right of the status row: always
+	// visible but clear of the path, listing, and shortcut keys.
+	conn := ""
+	if label != "" {
+		conn = dimStyle.Render("rtr — ") + connStyle.Render(label)
+	}
+	lines = append(lines, spread(dimStyle.Render(status), conn, max(m.width, 1)))
 
 	if panel := m.transfersView(); panel != "" {
 		lines = append(lines, dividerLine(m.width)) // separate files from transfers

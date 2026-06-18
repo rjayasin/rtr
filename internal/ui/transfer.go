@@ -226,16 +226,13 @@ func (m model) transfersView() string {
 			active++
 		}
 	}
-	header := dimStyle.Render(fmt.Sprintf("transfers (%d active)", active))
-	if m.focus == focusTransfers {
-		header = cursorStyle.Render("transfers ") + dimStyle.Render(fmt.Sprintf("(%d active)", active))
-	}
+	header := m.sectionLabel(focusTransfers, "transfers") + dimStyle.Render(fmt.Sprintf(" (%d active)", active))
 	rows := []string{header}
 	nw := m.xferNameWidth()
 	for i, x := range m.transfers {
 		marker := "  "
 		if m.focus == focusTransfers && i == m.xferCursor {
-			marker = cursorStyle.Render("▸ ")
+			marker = cursorStyle.Render("➤ ")
 		}
 		name := padRight(truncate(x.label, nw), nw)
 		var right string

@@ -635,7 +635,9 @@ func TestLocalPane(t *testing.T) {
 	if m.localCwd != dir || len(m.localEntries) != 2 {
 		t.Fatalf("local pane should list %q: cwd=%q entries=%d", dir, m.localCwd, len(m.localEntries))
 	}
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "local:") || !strings.Contains(v, "remote:") {
+	// The focused pane's label renders as an uppercase badge (e.g. "LOCAL"), so
+	// match case-insensitively.
+	if v := strings.ToLower(ansi.Strip(m.View())); !strings.Contains(v, "local") || !strings.Contains(v, "remote") {
 		t.Errorf("split view should show both panes\n%s", v)
 	}
 
