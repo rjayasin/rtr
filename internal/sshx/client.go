@@ -16,9 +16,9 @@ import (
 
 	"github.com/kevinburke/ssh_config"
 	"github.com/rjayasin/rtr/internal/config"
+	"github.com/skeema/knownhosts"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
-	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 const dialTimeout = 20 * time.Second
@@ -119,50 +119,55 @@ func authMethods(b config.Bookmark) []ssh.AuthMethod {
 	return methods
 }
 
-// hostKeyCallback verifies against known_hosts. An unknown host is trusted on
-// first use (its key is appended), matching OpenSSH's StrictHostKeyChecking=
-// accept-new. A *changed* key is rejected, since that is the dangerous case.
-func hostKeyCallback(path string) (ssh.HostKeyCallback, error) {
+// hostKeyConfig builds the host-key verification callback and the list of host
+// key algorithms already pinned for addr. An unknown host is trusted on first
+// use (its key is appended), matching OpenSSH's StrictHostKeyChecking=accept-new;
+// a *changed* key is rejected. Returning the pinned algorithms lets the client
+// prefer the same key type already in known_hosts — without this, x/crypto picks
+// from its own global order (RSA before ed25519) and falsely reports a changed
+// key when only a different type was pinned (e.g. by OpenSSH).
+func hostKeyConfig(path, addr string) (ssh.HostKeyCallback, []string, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
 		f.Close()
 	}
-	known, err := knownhosts.New(path)
+	db, err := knownhosts.NewDB(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
-		err := known(hostname, remote, key)
-		if err == nil {
+	verify := db.HostKeyCallback()
+	cb := func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		switch err := verify(hostname, remote, key); {
+		case err == nil:
 			return nil
+		case knownhosts.IsHostKeyChanged(err):
+			return fmt.Errorf("REMOTE HOST KEY CHANGED for %s — possible attack; "+
+				"fix ~/.ssh/known_hosts manually if expected", hostname)
+		case knownhosts.IsHostUnknown(err):
+			return appendKnownHost(path, hostname, remote, key)
+		default:
+			return err
 		}
-		var keyErr *knownhosts.KeyError
-		if errors.As(err, &keyErr) {
-			if len(keyErr.Want) > 0 {
-				return fmt.Errorf("REMOTE HOST KEY CHANGED for %s — possible attack; "+
-					"fix ~/.ssh/known_hosts manually if expected", hostname)
-			}
-			return appendKnownHost(path, hostname, key)
-		}
-		return err
-	}, nil
+	}
+	// Empty for an unknown host, in which case x/crypto falls back to its default
+	// algorithm order (fine for trust-on-first-use).
+	return cb, db.HostKeyAlgorithms(addr), nil
 }
 
-func appendKnownHost(path, hostname string, key ssh.PublicKey) error {
+func appendKnownHost(path, hostname string, remote net.Addr, key ssh.PublicKey) error {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	line := knownhosts.Line([]string{knownhosts.Normalize(hostname)}, key)
-	_, err = f.WriteString(line + "\n")
-	return err
+	return knownhosts.WriteKnownHost(f, hostname, remote, key)
 }
 
 func clientConfig(b config.Bookmark) (*ssh.ClientConfig, error) {
-	cb, err := hostKeyCallback(filepath.Join(homeDir(), ".ssh", "known_hosts"))
+	addr := net.JoinHostPort(b.Host, strconv.Itoa(b.EffectivePort()))
+	cb, hostKeyAlgos, err := hostKeyConfig(filepath.Join(homeDir(), ".ssh", "known_hosts"), addr)
 	if err != nil {
 		return nil, err
 	}
@@ -171,10 +176,11 @@ func clientConfig(b config.Bookmark) (*ssh.ClientConfig, error) {
 		user = os.Getenv("USER")
 	}
 	return &ssh.ClientConfig{
-		User:            user,
-		Auth:            authMethods(b),
-		HostKeyCallback: cb,
-		Timeout:         dialTimeout,
+		User:              user,
+		Auth:              authMethods(b),
+		HostKeyCallback:   cb,
+		HostKeyAlgorithms: hostKeyAlgos,
+		Timeout:           dialTimeout,
 	}, nil
 }
 

@@ -11,6 +11,7 @@ require (
 	github.com/creativeprojects/go-selfupdate v1.5.2
 	github.com/kevinburke/ssh_config v1.6.0
 	github.com/pkg/sftp v1.13.10
+	github.com/skeema/knownhosts v1.3.2
 	golang.org/x/crypto v0.53.0
 )
 
