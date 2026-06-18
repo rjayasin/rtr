@@ -117,7 +117,7 @@ func (m model) updateFileFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.brCursor--
 		}
 	case "down", "j":
-		if m.brCursor < len(m.filteredEntries())-1 {
+		if m.brCursor < len(m.displayedEntries())-1 {
 			m.brCursor++
 		}
 	case "right":
@@ -366,7 +366,7 @@ func (m *model) resort() {
 }
 
 func (m model) current() (e entryRef, ok bool) {
-	es := m.filteredEntries()
+	es := m.displayedEntries()
 	if m.brCursor < 0 || m.brCursor >= len(es) {
 		return entryRef{}, false
 	}
@@ -440,7 +440,11 @@ func (m model) visibleRows() int {
 // listLines renders exactly rows lines of the directory listing (padded with
 // blanks), so the status/panel/footer stay pinned to the bottom of the window.
 func (m model) listLines(rows int) []string {
-	entries := m.filteredEntries()
+	entries := m.displayedEntries()
+	var common map[string]bool
+	if m.comparing() {
+		common = m.commonNames()
+	}
 	out := make([]string, 0, rows)
 	if len(entries) == 0 {
 		if m.searchInput.Value() != "" {
@@ -459,18 +463,11 @@ func (m model) listLines(rows int) []string {
 		if m.selected[e.Path] {
 			check = selectedStyle.Render("[x]")
 		}
-		name := e.Name
-		size := fmt.Sprintf("%8s", "") // align with the %8s file-size column
-		if e.IsDir {
-			name = dirStyle.Render(name + "/")
-		} else {
-			size = dimStyle.Render(fmt.Sprintf("%8s", humanSize(e.Size)))
-		}
 		cursor := "  "
 		if i == m.brCursor && m.focus == focusFiles {
 			cursor = cursorStyle.Render("▸ ")
 		}
-		out = append(out, fmt.Sprintf("%s%s %s  %s", cursor, check, size, name))
+		out = append(out, fmt.Sprintf("%s%s %s  %s", cursor, check, sizeCell(e.IsDir, common[e.Name], e.Size), nameCell(e.Name, e.IsDir, common[e.Name])))
 	}
 	for len(out) < rows {
 		out = append(out, "")
@@ -554,17 +551,29 @@ func (m model) footer(baseHelp string) string {
 	case focusTransfers:
 		return "↑/↓ select • c cancel • x clear done • tab/esc files • q quit"
 	case focusLocal:
-		return fmt.Sprintf("↑/↓ move • → open • ← up • / search • t/n sort:%s • r refresh • l/esc close • tab remote • q quit", m.localSort)
+		return fmt.Sprintf("↑/↓ move • → open • ← up • / search • t/n sort:%s%s • r refresh • l/esc close • tab remote • q quit", m.localSort, m.compareHint())
 	}
 	switch {
 	case m.localActive && len(m.transfers) > 0:
-		return baseHelp + " • tab panes"
+		return baseHelp + m.compareHint() + " • tab panes"
 	case m.localActive:
-		return baseHelp + " • tab local"
+		return baseHelp + m.compareHint() + " • tab local"
 	case len(m.transfers) > 0:
 		return baseHelp + " • tab transfers"
 	}
 	return baseHelp
+}
+
+// compareHint shows the ~ comparison toggle and its state, only while the local
+// pane is open (when comparison is available).
+func (m model) compareHint() string {
+	if !m.localActive {
+		return ""
+	}
+	if m.compareMode {
+		return " • ~ compare:on"
+	}
+	return " • ~ compare"
 }
 
 func humanSize(n int64) string {
