@@ -11,20 +11,10 @@ builds:
     binary: rtr
     env:
       - CGO_ENABLED=0
-    goos:
-      - linux
-      - darwin
-    goarch:
-      - amd64
-      - arm64
-      - arm
-    goarm:
-      - "6"
-      - "7"
-    ignore:
-      # macOS has no 32-bit ARM build.
-      - goos: darwin
-        goarch: arm
+    # Only the two platforms in use: an M-series Mac and an x86_64 NAS.
+    targets:
+      - darwin_arm64
+      - linux_amd64
     ldflags:
       - -s -w -X main.version={{ .Version }}
 
