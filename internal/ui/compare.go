@@ -69,13 +69,15 @@ func (m model) displayedLocalEntries() []localEntry {
 }
 
 // nameCell renders a listing entry's name: a trailing slash for directories,
-// muted (darker) when it is common to both panes in comparison mode, bold for
-// directories otherwise.
-func nameCell(name string, isDir, common bool) string {
+// colored for directories and muted (darker) when common to both panes in
+// comparison mode. The cursor row overrides all of that with the bright style.
+func nameCell(name string, isDir, common, cursor bool) string {
 	if isDir {
 		name += "/"
 	}
 	switch {
+	case cursor:
+		return cursorCellStyle(isDir).Render(name)
 	case common:
 		return mutedStyle.Render(name)
 	case isDir:
@@ -86,14 +88,18 @@ func nameCell(name string, isDir, common bool) string {
 }
 
 // sizeCell renders the right-aligned size column: blank for directories, muted
-// for common files in comparison mode, dim otherwise.
-func sizeCell(isDir, common bool, size int64) string {
+// for common files in comparison mode, dim otherwise. The cursor row is bright.
+func sizeCell(isDir, common bool, size int64, cursor bool) string {
 	if isDir {
 		return fmt.Sprintf("%8s", "")
 	}
 	s := fmt.Sprintf("%8s", humanSize(size))
-	if common {
+	switch {
+	case cursor:
+		return cursorFileStyle.Render(s) // size only shows for files
+	case common:
 		return mutedStyle.Render(s)
+	default:
+		return dimStyle.Render(s)
 	}
-	return dimStyle.Render(s)
 }

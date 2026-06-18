@@ -290,11 +290,15 @@ func (m model) localListLines(rows int) []string {
 	}
 	for i := m.localOffset; i < end; i++ {
 		e := entries[i]
-		cursor := "  "
-		if i == m.localCursor && m.focus == focusLocal {
-			cursor = cursorStyle.Render("▸ ")
+		cursorRow := i == m.localCursor && m.focus == focusLocal
+		marker := "  "
+		if cursorRow {
+			marker = cursorStyle.Render("➤ ")
 		}
-		out = append(out, fmt.Sprintf("%s%s  %s", cursor, sizeCell(e.isDir, common[e.name], e.size), nameCell(e.name, e.isDir, common[e.name])))
+		out = append(out, fmt.Sprintf("%s%s  %s",
+			marker,
+			sizeCell(e.isDir, common[e.name], e.size, cursorRow),
+			nameCell(e.name, e.isDir, common[e.name], cursorRow)))
 	}
 	for len(out) < rows {
 		out = append(out, "")
@@ -317,8 +321,8 @@ func (m model) browserColumns() []string {
 		rw = 12
 	}
 
-	remoteHead := dimStyle.Render("remote: "+m.cwd) + searchSuffix(m.searchActive, m.searchInput.Value())
-	localHead := dimStyle.Render("local: "+m.localCwd) + searchSuffix(m.localSearchActive, m.localSearchInput.Value())
+	remoteHead := m.sectionLabel(focusFiles, "remote") + dimStyle.Render(" "+m.cwd) + searchSuffix(m.searchActive, m.searchInput.Value())
+	localHead := m.sectionLabel(focusLocal, "local") + dimStyle.Render(" "+m.localCwd) + searchSuffix(m.localSearchActive, m.localSearchInput.Value())
 	left := append([]string{remoteHead, ""}, m.listLines(rows)...)
 	right := append([]string{localHead, ""}, m.localListLines(rows)...)
 
@@ -337,4 +341,14 @@ func fitLine(s string, w int) string {
 		s += strings.Repeat(" ", pad)
 	}
 	return s
+}
+
+// spread lays left and right on one line of the given width — left-justified and
+// right-justified respectively (ANSI-aware), with at least one space between.
+func spread(left, right string, width int) string {
+	gap := width - ansi.StringWidth(left) - ansi.StringWidth(right)
+	if gap < 1 {
+		gap = 1
+	}
+	return left + strings.Repeat(" ", gap) + right
 }
