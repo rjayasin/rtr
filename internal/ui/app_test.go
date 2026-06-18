@@ -702,6 +702,59 @@ func TestLocalPaneSorting(t *testing.T) {
 	}
 }
 
+// The local pane supports the same `/` search as the remote pane: typing filters
+// live, enter accepts (keeping the filter), and esc clears it.
+func TestLocalPaneSearch(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "Photos"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"report.pdf", "photo-backup.zip", "notes.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	m := testModel()
+	m.screen = screenBrowser
+	m.startDir = dir
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	m = updated.(model)
+
+	// / opens the local search field.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(model)
+	if !m.localSearchActive {
+		t.Fatal("/ should open the local search field")
+	}
+
+	// Typing "photo" matches "Photos" and "photo-backup.zip" (case-insensitive).
+	for _, r := range "photo" {
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = updated.(model)
+	}
+	if got := m.filteredLocalEntries(); len(got) != 2 {
+		t.Fatalf("filtered local = %d, want 2: %+v", len(got), got)
+	}
+
+	// enter accepts: field inactive, filter persists.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(model)
+	if m.localSearchActive {
+		t.Error("enter should deactivate the local search field")
+	}
+	if m.localSearchInput.Value() != "photo" || len(m.filteredLocalEntries()) != 2 {
+		t.Errorf("filter should persist after enter: %q (%d)", m.localSearchInput.Value(), len(m.filteredLocalEntries()))
+	}
+
+	// esc clears the filter, restoring the full listing.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(model)
+	if m.localSearchInput.Value() != "" || len(m.filteredLocalEntries()) != len(m.localEntries) {
+		t.Errorf("esc should clear the local filter: %q", m.localSearchInput.Value())
+	}
+}
+
 // With the local pane open and navigated into a subdirectory, a new download
 // defaults its destination to that local directory rather than the launch dir.
 func TestDownloadDestFollowsLocalPane(t *testing.T) {

@@ -79,6 +79,9 @@ func (m model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.searchActive {
 		return m.updateSearch(msg)
 	}
+	if m.localSearchActive {
+		return m.updateLocalSearch(msg)
+	}
 	if key, ok := msg.(tea.KeyMsg); ok {
 		if m.focus == focusLocal {
 			return m.updateLocalFocus(key)
@@ -424,8 +427,8 @@ func (m model) visibleRows() int {
 	if len(m.transfers) > 0 {
 		chrome += 1 + m.transfersHeight() // divider + panel
 	}
-	if m.searchActive || m.searchInput.Value() != "" {
-		chrome++ // search field sits above the footer
+	if m.searchActive || m.localSearchActive {
+		chrome++ // the active search field sits above the footer
 	}
 	r := m.height - chrome
 	if r < 3 {
@@ -487,7 +490,8 @@ func (m model) viewBrowser() string {
 	if m.localActive {
 		body = m.browserColumns()
 	} else {
-		body = append([]string{pathStyle.Render(m.cwd), ""}, m.listLines(m.visibleRows())...)
+		breadcrumb := pathStyle.Render(m.cwd) + searchSuffix(m.searchActive, m.searchInput.Value())
+		body = append([]string{breadcrumb, ""}, m.listLines(m.visibleRows())...)
 	}
 	if m.destActive {
 		body = overlayCenter(body, m.destPopover(), max(m.width, 1))
@@ -507,21 +511,33 @@ func (m model) viewBrowser() string {
 		lines = append(lines, dividerLine(m.width)) // separate files from transfers
 		lines = append(lines, strings.Split(panel, "\n")...)
 	}
-	// The search field (or an indicator of an applied filter) sits just above
-	// the shortcut footer.
+	// The active search field (remote or local — only one can be typing at a
+	// time) sits just above the shortcut footer. Accepted-but-inactive filters
+	// are shown as a suffix on each pane's breadcrumb instead.
 	if m.searchActive {
 		lines = append(lines, m.searchInput.View())
-	} else if q := m.searchInput.Value(); q != "" {
-		lines = append(lines, dimStyle.Render(fmt.Sprintf("/%s", q)))
+	} else if m.localSearchActive {
+		lines = append(lines, m.localSearchInput.View())
 	}
 	browserHelp := fmt.Sprintf(
 		"↑/↓ move • → open • ← up • x/space select • / search • l local • enter download • t/n sort:%s • a all • c clear • r refresh • esc back",
 		m.sortMode)
-	if m.searchActive {
-		browserHelp = "type to filter • enter accept • esc clear"
+	help := m.footer(browserHelp)
+	if m.searchActive || m.localSearchActive {
+		help = "type to filter • enter accept • esc clear"
 	}
-	lines = append(lines, helpStyle.Render(m.footer(browserHelp)))
+	lines = append(lines, helpStyle.Render(help))
 	return strings.Join(lines, "\n")
+}
+
+// searchSuffix renders an accepted (non-active) filter as a breadcrumb suffix,
+// e.g. "  /report". While the field is actively being typed, it shows above the
+// footer instead, so nothing is appended here.
+func searchSuffix(active bool, query string) string {
+	if !active && query != "" {
+		return dimStyle.Render("  /" + query)
+	}
+	return ""
 }
 
 func dividerLine(w int) string {
@@ -538,7 +554,7 @@ func (m model) footer(baseHelp string) string {
 	case focusTransfers:
 		return "↑/↓ select • c cancel • x clear done • tab/esc files • q quit"
 	case focusLocal:
-		return fmt.Sprintf("↑/↓ move • → open • ← up • t/n sort:%s • r refresh • l/esc close • tab remote • q quit", m.localSort)
+		return fmt.Sprintf("↑/↓ move • → open • ← up • / search • t/n sort:%s • r refresh • l/esc close • tab remote • q quit", m.localSort)
 	}
 	switch {
 	case m.localActive && len(m.transfers) > 0:

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -43,15 +44,25 @@ func (m model) toggleLocal() model {
 func (m model) updateLocalFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case "esc":
+		// A live filter is cleared first; a second esc closes the pane.
+		if m.localSearchInput.Value() != "" {
+			m.clearLocalSearch()
+			return m, nil
+		}
 		m.localActive = false
 		m.focus = focusFiles
 		return m, nil
+	case "/":
+		m.localSearchActive = true
+		m.localSearchInput.Focus()
+		m.localSearchInput.CursorEnd()
+		return m, textinput.Blink
 	case "up", "k":
 		if m.localCursor > 0 {
 			m.localCursor--
 		}
 	case "down", "j":
-		if m.localCursor < len(m.localEntries)-1 {
+		if m.localCursor < len(m.filteredLocalEntries())-1 {
 			m.localCursor++
 		}
 	case "right":
@@ -95,13 +106,64 @@ func (m model) defaultDest() string {
 }
 
 // loadLocal reads localCwd into localEntries, sorted by the active mode, and
-// resets the cursor.
+// resets the cursor and any active filter (navigation/refresh clears the search,
+// matching the remote pane).
 func (m *model) loadLocal() {
 	entries, err := readLocalDir(m.localCwd)
 	m.localEntries = entries
 	m.localErr = err
 	sortLocalEntries(m.localEntries, m.localSort)
+	m.clearLocalSearch()
 	m.localCursor, m.localOffset = 0, 0
+}
+
+// updateLocalSearch drives the local pane's search field: typing filters live,
+// enter accepts the filter and returns to the list, esc clears it.
+func (m model) updateLocalSearch(msg tea.Msg) (tea.Model, tea.Cmd) {
+	key, ok := msg.(tea.KeyMsg)
+	if !ok {
+		var cmd tea.Cmd
+		m.localSearchInput, cmd = m.localSearchInput.Update(msg)
+		return m, cmd
+	}
+	switch key.String() {
+	case "esc":
+		m.clearLocalSearch()
+		return m, nil
+	case "enter":
+		m.localSearchActive = false
+		m.localSearchInput.Blur()
+		m.localCursor, m.localOffset = 0, 0
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.localSearchInput, cmd = m.localSearchInput.Update(msg)
+	m.localCursor, m.localOffset = 0, 0
+	return m, cmd
+}
+
+// clearLocalSearch dismisses the local search field and removes the filter.
+func (m *model) clearLocalSearch() {
+	m.localSearchActive = false
+	m.localSearchInput.Blur()
+	m.localSearchInput.SetValue("")
+	m.localCursor, m.localOffset = 0, 0
+}
+
+// filteredLocalEntries returns the local entries matching the current query
+// (case-insensitive substring on the name), or all entries when no query is set.
+func (m model) filteredLocalEntries() []localEntry {
+	q := strings.ToLower(strings.TrimSpace(m.localSearchInput.Value()))
+	if q == "" {
+		return m.localEntries
+	}
+	out := make([]localEntry, 0, len(m.localEntries))
+	for _, e := range m.localEntries {
+		if strings.Contains(strings.ToLower(e.name), q) {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // resortLocal re-orders the current local listing and returns the cursor to top.
@@ -116,10 +178,11 @@ func (m *model) enterLocalDir(dir string) {
 }
 
 func (m model) currentLocal() (localEntry, bool) {
-	if m.localCursor < 0 || m.localCursor >= len(m.localEntries) {
+	es := m.filteredLocalEntries()
+	if m.localCursor < 0 || m.localCursor >= len(es) {
 		return localEntry{}, false
 	}
-	return m.localEntries[m.localCursor], true
+	return es[m.localCursor], true
 }
 
 // clampLocalScroll keeps the local cursor within the visible window.
@@ -183,19 +246,22 @@ func sortLocalEntries(entries []localEntry, mode sortMode) {
 // localListLines renders exactly rows lines of the local listing (padded with
 // blanks), mirroring the remote listLines layout minus the selection column.
 func (m model) localListLines(rows int) []string {
+	entries := m.filteredLocalEntries()
 	out := make([]string, 0, rows)
 	switch {
 	case m.localErr != nil:
 		out = append(out, errStyle.Render("error: ")+m.localErr.Error())
-	case len(m.localEntries) == 0:
+	case len(entries) == 0 && m.localSearchInput.Value() != "":
+		out = append(out, dimStyle.Render("(no matches)"))
+	case len(entries) == 0:
 		out = append(out, dimStyle.Render("(empty directory)"))
 	}
 	end := m.localOffset + rows
-	if end > len(m.localEntries) {
-		end = len(m.localEntries)
+	if end > len(entries) {
+		end = len(entries)
 	}
 	for i := m.localOffset; i < end; i++ {
-		e := m.localEntries[i]
+		e := entries[i]
 		name := e.name
 		size := fmt.Sprintf("%8s", "")
 		if e.isDir {
@@ -230,8 +296,10 @@ func (m model) browserColumns() []string {
 		rw = 12
 	}
 
-	left := append([]string{dimStyle.Render("remote: " + m.cwd), ""}, m.listLines(rows)...)
-	right := append([]string{dimStyle.Render("local: " + m.localCwd), ""}, m.localListLines(rows)...)
+	remoteHead := dimStyle.Render("remote: "+m.cwd) + searchSuffix(m.searchActive, m.searchInput.Value())
+	localHead := dimStyle.Render("local: "+m.localCwd) + searchSuffix(m.localSearchActive, m.localSearchInput.Value())
+	left := append([]string{remoteHead, ""}, m.listLines(rows)...)
+	right := append([]string{localHead, ""}, m.localListLines(rows)...)
 
 	out := make([]string, len(left))
 	for i := range left {
