@@ -69,13 +69,15 @@ type model struct {
 
 	// local file pane (toggled with `l`): a read-only view of the local
 	// directory rtr was launched from, shown split to the right of the remote list
-	localActive  bool
-	localCwd     string
-	localEntries []localEntry
-	localCursor  int
-	localOffset  int
-	localErr     error
-	localSort    sortMode // defaults to sortTimeDesc (newest first), like the remote pane
+	localActive       bool
+	localCwd          string
+	localEntries      []localEntry
+	localCursor       int
+	localOffset       int
+	localErr          error
+	localSort         sortMode // defaults to sortTimeDesc (newest first), like the remote pane
+	localSearchActive bool
+	localSearchInput  textinput.Model
 
 	// background transfers, shown stacked at the bottom of every screen
 	progress          progress.Model
@@ -108,6 +110,11 @@ func New(cfg *config.Config, version string) model {
 	si.Placeholder = "filter"
 	si.CharLimit = 256
 
+	lsi := textinput.New()
+	lsi.Prompt = "/"
+	lsi.Placeholder = "filter"
+	lsi.CharLimit = 256
+
 	// Default download destination: the directory rtr was launched from.
 	wd, err := os.Getwd()
 	if err != nil {
@@ -115,16 +122,17 @@ func New(cfg *config.Config, version string) model {
 	}
 
 	m := model{
-		cfg:           cfg,
-		screen:        screenBookmarks,
-		selected:      map[string]bool{},
-		spinner:       sp,
-		destInput:     di,
-		searchInput:   si,
-		progress:      progress.New(progress.WithDefaultGradient()),
-		startDir:      wd,
-		transfersPath: config.TransfersPath(cfg.Path()),
-		version:       version,
+		cfg:              cfg,
+		screen:           screenBookmarks,
+		selected:         map[string]bool{},
+		spinner:          sp,
+		destInput:        di,
+		searchInput:      si,
+		localSearchInput: lsi,
+		progress:         progress.New(progress.WithDefaultGradient()),
+		startDir:         wd,
+		transfersPath:    config.TransfersPath(cfg.Path()),
+		version:          version,
 	}
 
 	// Restore any transfers that were still running when rtr last exited; they
@@ -389,7 +397,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // requests quit.
 func (m model) handleGlobalKey(key tea.KeyMsg) (model, tea.Cmd, bool) {
 	ks := key.String()
-	textMode := m.screen == screenForm || m.destActive || m.searchActive
+	textMode := m.screen == screenForm || m.destActive || m.searchActive || m.localSearchActive
 
 	if m.confirmQuit {
 		switch ks {
