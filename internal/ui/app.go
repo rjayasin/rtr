@@ -96,6 +96,20 @@ type model struct {
 	updateLatest string // latest published version, set when a newer one exists
 }
 
+// displayVersion formats a build version for display: "dev" for source builds,
+// otherwise the version with a single leading "v" (GoReleaser injects e.g.
+// "0.5.0"; `git describe` already yields "v0.5.0-…").
+func displayVersion(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" || v == "dev" {
+		return "dev"
+	}
+	if strings.HasPrefix(v, "v") {
+		return v
+	}
+	return "v" + v
+}
+
 // New builds the initial model. version is the running build's version, used for
 // the startup "update available" check.
 func New(cfg *config.Config, version string) model {

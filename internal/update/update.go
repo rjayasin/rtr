@@ -42,12 +42,20 @@ func Latest(ctx context.Context, current string) (latest string, newer bool, err
 
 // Apply replaces the running binary with the latest release when it is newer.
 // A non-release build is always updated onto the latest published version.
-// It returns the resulting version and whether the binary was replaced.
-func Apply(ctx context.Context, current string) (version string, updated bool, err error) {
+// It returns the resulting version and whether the binary was replaced. status,
+// if non-nil, receives human-readable progress messages as each step runs.
+func Apply(ctx context.Context, current string, status func(string)) (version string, updated bool, err error) {
+	report := func(format string, a ...any) {
+		if status != nil {
+			status(fmt.Sprintf(format, a...))
+		}
+	}
+
 	up, err := newUpdater()
 	if err != nil {
 		return "", false, err
 	}
+	report("contacting github.com/%s…", Slug)
 	rel, found, err := up.DetectLatest(ctx, su.ParseSlug(Slug))
 	if err != nil {
 		return "", false, err
@@ -58,14 +66,31 @@ func Apply(ctx context.Context, current string) (version string, updated bool, e
 	if isReleaseVersion(current) && !rel.GreaterThan(current) {
 		return rel.Version(), false, nil
 	}
+
 	exe, err := os.Executable()
 	if err != nil {
 		return "", false, err
 	}
+	report("latest is %s; downloading %s (%s)…", rel.Version(), rel.AssetName, humanBytes(rel.AssetByteSize))
+	report("verifying checksum and replacing %s…", exe)
 	if err := up.UpdateTo(ctx, rel, exe); err != nil {
 		return "", false, err
 	}
 	return rel.Version(), true, nil
+}
+
+// humanBytes formats a byte count for download progress messages.
+func humanBytes(n int) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for x := int64(n) / unit; x >= unit; x /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
 // isReleaseVersion reports whether s looks like a real release version (vX.Y...),

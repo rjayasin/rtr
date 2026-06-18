@@ -572,6 +572,31 @@ func TestDisconnectArrowSelection(t *testing.T) {
 }
 
 // An updateAvailableMsg surfaces a notice on the bookmarks screen.
+func TestDisplayVersion(t *testing.T) {
+	cases := map[string]string{
+		"":                    "dev",
+		"dev":                 "dev",
+		"0.5.0":               "v0.5.0",
+		"v0.5.0":              "v0.5.0",
+		"v0.5.0-3-gabc-dirty": "v0.5.0-3-gabc-dirty",
+	}
+	for in, want := range cases {
+		if got := displayVersion(in); got != want {
+			t.Errorf("displayVersion(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// The bookmarks screen shows the running version in its title.
+func TestBookmarksShowsVersion(t *testing.T) {
+	m := testModel()
+	m.screen = screenBookmarks
+	m.version = "0.9.9"
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "rtr v0.9.9 — bookmarks") {
+		t.Errorf("bookmarks title should show the version\n%s", v)
+	}
+}
+
 func TestUpdateAvailableNotice(t *testing.T) {
 	m := testModel()
 	m.screen = screenBookmarks

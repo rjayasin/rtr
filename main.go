@@ -48,13 +48,15 @@ func main() {
 }
 
 // runUpdate implements `rtr update`: fetch the latest release and replace the
-// running binary in place if it is newer.
+// running binary in place if it is newer, printing progress as it goes.
 func runUpdate() {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
 	fmt.Printf("rtr %s — checking for updates…\n", version)
-	v, updated, err := update.Apply(ctx, version)
+	v, updated, err := update.Apply(ctx, version, func(msg string) {
+		fmt.Printf("  • %s\n", msg)
+	})
 	if err != nil {
 		fail(err)
 	}
@@ -62,7 +64,7 @@ func runUpdate() {
 		fmt.Printf("Already up to date (%s).\n", v)
 		return
 	}
-	fmt.Printf("Updated to %s.\n", v)
+	fmt.Printf("✓ Updated %s → %s. Restart rtr to use the new version.\n", version, v)
 }
 
 func runTUI(args []string) {
