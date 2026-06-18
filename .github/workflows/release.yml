@@ -1,19 +1,42 @@
 name: Release
 
+# Every push to main cuts a new release: the next minor version is computed
+# from the latest tag (no commit-message conventions needed), tagged, and built
+# by goreleaser in the same job. 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
 
 permissions:
   contents: write
 
+# Serialize releases so two quick pushes can't race on the same next tag.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
-  goreleaser:
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      # svu (from goreleaser's author) computes the next minor from the latest
+      # tag. mode: bump ignores commit messages, so no feat/fix conventions are
+      # needed — every push just bumps the minor.
+      - name: Compute next minor tag
+        id: tag
+        uses: caarlos0/svu-action@v2
+        with:
+          mode: bump
+          bump: minor
+
+      - name: Create and push tag
+        run: |
+          git tag "${{ steps.tag.outputs.version }}"
+          git push origin "${{ steps.tag.outputs.version }}"
 
       - uses: actions/setup-go@v6
         with:
