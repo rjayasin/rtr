@@ -2,7 +2,7 @@ name: Release
 
 # Every push to main cuts a new release: the next minor version is computed
 # from the latest tag (no commit-message conventions needed), tagged, and built
-# by goreleaser in the same job. 
+# by goreleaser in the same job.
 on:
   push:
     branches: [main]
@@ -23,25 +23,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      # svu (from goreleaser's author) computes the next minor from the latest
-      # tag. mode: bump ignores commit messages, so no feat/fix conventions are
-      # needed — every push just bumps the minor.
-      - name: Compute next minor tag
-        id: tag
-        uses: caarlos0/svu-action@v2
-        with:
-          mode: bump
-          bump: minor
-
-      - name: Create and push tag
-        run: |
-          git tag "${{ steps.tag.outputs.version }}"
-          git push origin "${{ steps.tag.outputs.version }}"
-
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
+
+      # svu (from goreleaser's author) computes the next version from the latest
+      # tag. The `minor` subcommand always bumps the minor, ignoring commit
+      # messages, so no feat/fix conventions are needed.
+      - name: Tag next minor version
+        run: |
+          go install github.com/caarlos0/svu/v3@latest
+          next=$(svu minor)
+          git tag "$next"
+          git push origin "$next"
 
       - uses: goreleaser/goreleaser-action@v6
         with:
