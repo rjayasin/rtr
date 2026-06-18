@@ -90,6 +90,11 @@ func (m model) updateLocalFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.localSort = sortNameAsc
 		}
 		m.resortLocal()
+	case ".":
+		// Toggle dot-file visibility (shared with the remote pane); start from the
+		// top since the visible set changes.
+		m.showHidden = !m.showHidden
+		m.localCursor, m.localOffset = 0, 0
 	case "r":
 		m.loadLocal()
 	}
@@ -151,18 +156,20 @@ func (m *model) clearLocalSearch() {
 	m.localCursor, m.localOffset = 0, 0
 }
 
-// filteredLocalEntries returns the local entries matching the current query
-// (case-insensitive substring on the name), or all entries when no query is set.
+// filteredLocalEntries returns the local entries to display: dot files are
+// dropped unless showHidden is on, and the remainder is narrowed to the current
+// query (case-insensitive substring on the name).
 func (m model) filteredLocalEntries() []localEntry {
 	q := strings.ToLower(strings.TrimSpace(m.localSearchInput.Value()))
-	if q == "" {
-		return m.localEntries
-	}
 	out := make([]localEntry, 0, len(m.localEntries))
 	for _, e := range m.localEntries {
-		if strings.Contains(strings.ToLower(e.name), q) {
-			out = append(out, e)
+		if !m.showHidden && strings.HasPrefix(e.name, ".") {
+			continue
 		}
+		if q != "" && !strings.Contains(strings.ToLower(e.name), q) {
+			continue
+		}
+		out = append(out, e)
 	}
 	return out
 }

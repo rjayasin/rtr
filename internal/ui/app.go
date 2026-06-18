@@ -69,6 +69,9 @@ type model struct {
 	searchActive bool
 	searchInput  textinput.Model
 
+	// showHidden toggles dot-file visibility in both panes (`.`); hidden by default.
+	showHidden bool
+
 	// local file pane (toggled with `l`): a read-only view of the local
 	// directory rtr was launched from, shown split to the right of the remote list
 	localActive       bool
