@@ -78,6 +78,7 @@ type model struct {
 	localSort         sortMode // defaults to sortTimeDesc (newest first), like the remote pane
 	localSearchActive bool
 	localSearchInput  textinput.Model
+	compareMode       bool // ~ toggles dimming/grouping files present in both panes
 
 	// background transfers, shown stacked at the bottom of every screen
 	progress          progress.Model
@@ -448,6 +449,14 @@ func (m model) handleGlobalKey(key tea.KeyMsg) (model, tea.Cmd, bool) {
 
 	if ks == "l" && m.screen == screenBrowser {
 		return m.toggleLocal(), nil, true
+	}
+
+	if ks == "~" && m.screen == screenBrowser && m.localActive {
+		m.compareMode = !m.compareMode
+		// Order changes, so restart both cursors at the top.
+		m.brCursor, m.brOffset = 0, 0
+		m.localCursor, m.localOffset = 0, 0
+		return m, nil, true
 	}
 
 	if ks == "tab" {

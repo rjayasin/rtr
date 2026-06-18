@@ -702,6 +702,122 @@ func TestLocalPaneSorting(t *testing.T) {
 	}
 }
 
+// When a transfer finishes writing into the directory shown in the local pane,
+// the local listing refreshes so the new files appear; a transfer to a different
+// directory leaves it untouched.
+func TestLocalRefreshOnTransferDone(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "before.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := testModel()
+	m.screen = screenBrowser
+	m.startDir = dir
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	m = updated.(model)
+	if len(m.localEntries) != 1 {
+		t.Fatalf("local pane should list 1 entry, got %d", len(m.localEntries))
+	}
+
+	// A transfer into this directory completes after a new file lands.
+	m.transfers = []*xfer{{id: 1, dest: dir, label: "f"}}
+	if err := os.WriteFile(filepath.Join(dir, "after.txt"), []byte("y"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	updated, _ = m.handleEvent(1, transfer.Event{Done: true})
+	m = updated.(model)
+	if len(m.localEntries) != 2 {
+		t.Errorf("local listing should refresh to 2 entries, got %d", len(m.localEntries))
+	}
+
+	// A transfer to an unrelated directory does not refresh the pane.
+	m.transfers = []*xfer{{id: 2, dest: t.TempDir(), label: "g"}}
+	if err := os.WriteFile(filepath.Join(dir, "third.txt"), []byte("z"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	updated, _ = m.handleEvent(2, transfer.Event{Done: true})
+	m = updated.(model)
+	if len(m.localEntries) != 2 {
+		t.Errorf("unrelated transfer should not refresh the pane, got %d", len(m.localEntries))
+	}
+}
+
+// Comparison mode (~) sinks files present in both panes to the bottom of each
+// pane while unique files stay on top, preserving each pane's sort order within
+// the two groups. It is only available while the local pane is open.
+func TestCompareMode(t *testing.T) {
+	dir := t.TempDir()
+	for _, n := range []string{"shared.iso", "common.txt", "local-only.log"} {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(dir, "Media"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	remoteNames := func(es []sshx.Entry) string {
+		var n []string
+		for _, e := range es {
+			n = append(n, e.Name)
+		}
+		return strings.Join(n, ",")
+	}
+	localNames := func(es []localEntry) string {
+		var n []string
+		for _, e := range es {
+			n = append(n, e.name)
+		}
+		return strings.Join(n, ",")
+	}
+
+	m := testModel()
+	m.screen = screenBrowser
+	m.cwd = "/r"
+	m.startDir = dir
+	m.entries = []sshx.Entry{
+		{Name: "common.txt", Path: "/r/common.txt"},
+		{Name: "remote-only.mkv", Path: "/r/remote-only.mkv"},
+		{Name: "shared.iso", Path: "/r/shared.iso"},
+		{Name: "Media", Path: "/r/Media", IsDir: true},
+	}
+	m.sortMode = sortNameAsc
+	sortEntries(m.entries, m.sortMode)
+	m.localSort = sortNameAsc
+
+	// ~ does nothing until the local pane is open.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("~")})
+	m = updated.(model)
+	if m.compareMode {
+		t.Fatal("~ should be ignored while the local pane is closed")
+	}
+
+	// Open the pane, then enable comparison.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	m = updated.(model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("~")})
+	m = updated.(model)
+	if !m.compareMode {
+		t.Fatal("~ should enable comparison once the pane is open")
+	}
+
+	// Unique on top, common (common.txt, Media, shared.iso) sunk to the bottom,
+	// each group still in name order.
+	if got := remoteNames(m.displayedEntries()); got != "remote-only.mkv,common.txt,Media,shared.iso" {
+		t.Errorf("remote compare order = %q", got)
+	}
+	if got := localNames(m.displayedLocalEntries()); got != "local-only.log,common.txt,Media,shared.iso" {
+		t.Errorf("local compare order = %q", got)
+	}
+
+	// Toggling off restores the plain sorted order.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("~")})
+	m = updated.(model)
+	if got := remoteNames(m.displayedEntries()); got != "common.txt,Media,remote-only.mkv,shared.iso" {
+		t.Errorf("remote order with compare off = %q", got)
+	}
+}
+
 // The local pane supports the same `/` search as the remote pane: typing filters
 // live, enter accepts (keeping the filter), and esc clears it.
 func TestLocalPaneSearch(t *testing.T) {

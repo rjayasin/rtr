@@ -137,6 +137,11 @@ func (m model) handleEvent(id int, ev transfer.Event) (tea.Model, tea.Cmd) {
 			cleanupPartial(x)
 		}
 		m.persistTransfers() // drop the finished transfer from the resume file
+		// If the local pane is showing the directory this transfer wrote to,
+		// refresh it so the newly-arrived files appear.
+		if m.localActive && filepath.Clean(x.dest) == filepath.Clean(m.localCwd) {
+			m.reloadLocal()
+		}
 		return m, nil
 	case ev.Progress != nil:
 		x.pct = ev.Progress.Percent

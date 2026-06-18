@@ -26,6 +26,7 @@ type localEntry struct {
 func (m model) toggleLocal() model {
 	if m.localActive {
 		m.localActive = false
+		m.compareMode = false
 		if m.focus == focusLocal {
 			m.focus = focusFiles
 		}
@@ -62,7 +63,7 @@ func (m model) updateLocalFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.localCursor--
 		}
 	case "down", "j":
-		if m.localCursor < len(m.filteredLocalEntries())-1 {
+		if m.localCursor < len(m.displayedLocalEntries())-1 {
 			m.localCursor++
 		}
 	case "right":
@@ -172,13 +173,29 @@ func (m *model) resortLocal() {
 	m.localCursor, m.localOffset = 0, 0
 }
 
+// reloadLocal re-reads the current local directory in place, preserving the
+// active filter and (clamped) cursor. Used to refresh after a download lands.
+func (m *model) reloadLocal() {
+	entries, err := readLocalDir(m.localCwd)
+	m.localEntries = entries
+	m.localErr = err
+	sortLocalEntries(m.localEntries, m.localSort)
+	if n := len(m.displayedLocalEntries()); m.localCursor >= n {
+		m.localCursor = n - 1
+	}
+	if m.localCursor < 0 {
+		m.localCursor = 0
+	}
+	m.clampLocalScroll()
+}
+
 func (m *model) enterLocalDir(dir string) {
 	m.localCwd = dir
 	m.loadLocal()
 }
 
 func (m model) currentLocal() (localEntry, bool) {
-	es := m.filteredLocalEntries()
+	es := m.displayedLocalEntries()
 	if m.localCursor < 0 || m.localCursor >= len(es) {
 		return localEntry{}, false
 	}
@@ -246,7 +263,11 @@ func sortLocalEntries(entries []localEntry, mode sortMode) {
 // localListLines renders exactly rows lines of the local listing (padded with
 // blanks), mirroring the remote listLines layout minus the selection column.
 func (m model) localListLines(rows int) []string {
-	entries := m.filteredLocalEntries()
+	entries := m.displayedLocalEntries()
+	var common map[string]bool
+	if m.comparing() {
+		common = m.commonNames()
+	}
 	out := make([]string, 0, rows)
 	switch {
 	case m.localErr != nil:
@@ -262,18 +283,11 @@ func (m model) localListLines(rows int) []string {
 	}
 	for i := m.localOffset; i < end; i++ {
 		e := entries[i]
-		name := e.name
-		size := fmt.Sprintf("%8s", "")
-		if e.isDir {
-			name = dirStyle.Render(name + "/")
-		} else {
-			size = dimStyle.Render(fmt.Sprintf("%8s", humanSize(e.size)))
-		}
 		cursor := "  "
 		if i == m.localCursor && m.focus == focusLocal {
 			cursor = cursorStyle.Render("▸ ")
 		}
-		out = append(out, fmt.Sprintf("%s%s  %s", cursor, size, name))
+		out = append(out, fmt.Sprintf("%s%s  %s", cursor, sizeCell(e.isDir, common[e.name], e.size), nameCell(e.name, e.isDir, common[e.name])))
 	}
 	for len(out) < rows {
 		out = append(out, "")
