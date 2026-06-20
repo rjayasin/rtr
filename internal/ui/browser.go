@@ -252,10 +252,14 @@ func (m model) updateDestPopover(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case "esc":
 		m.destActive = false
+		m.destUpload = false
 		m.destInput.Blur()
 		m.err = nil
 		return m, nil
 	case "enter":
+		if m.destUpload {
+			return m.startUpload()
+		}
 		dest := expandHomeUI(strings.TrimSpace(m.destInput.Value()))
 		if dest == "" {
 			m.err = fmt.Errorf("destination is required")
@@ -293,6 +297,54 @@ func (m model) updateDestPopover(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.destInput, cmd = m.destInput.Update(msg)
 	return m, cmd
+}
+
+// startUpload queues a background upload from the destination popover: it
+// ensures the remote destination directory exists, then mirrors startCmd the way
+// the download path does. The remote dest is taken verbatim (no local ~ or path
+// expansion) since it names a directory on the host.
+func (m model) startUpload() (tea.Model, tea.Cmd) {
+	dest := strings.TrimSpace(m.destInput.Value())
+	if dest == "" {
+		m.err = fmt.Errorf("destination is required")
+		return m, nil
+	}
+	if m.session == nil {
+		m.err = fmt.Errorf("not connected")
+		return m, nil
+	}
+	if err := m.session.MkdirAll(dest); err != nil {
+		m.err = fmt.Errorf("create remote dest: %w", err)
+		return m, nil
+	}
+	id := m.nextXfer
+	m.nextXfer++
+	job := transfer.Job{
+		Bookmark:   m.session.Bookmark,
+		Sources:    m.pendingSources,
+		RemoteDest: dest,
+		Upload:     true,
+		Cfg:        m.cfg.Rsync,
+	}
+	// Record which remote paths to delete if the upload is cancelled — only those
+	// that do not already exist, checked now while the session is known-good.
+	remove, globs := remoteCleanupTargets(m.session, dest, m.pendingSources)
+	m.transfers = append(m.transfers, &xfer{
+		id:            id,
+		label:         transferLabel(m.pendingSources),
+		dest:          dest,
+		upload:        true,
+		bookmark:      m.session.Bookmark,
+		sources:       m.pendingSources,
+		cleanupRemove: remove,
+		cleanupGlobs:  globs,
+	})
+	m.destActive = false
+	m.destUpload = false
+	m.destInput.Blur()
+	m.err = nil
+	m.persistTransfers()
+	return m, startCmd(id, job)
 }
 
 // updateSearch drives the browser search field. Typing filters the listing
@@ -575,7 +627,7 @@ func (m model) footer(baseHelp string) string {
 	case focusTransfers:
 		return "↑/↓ select • c cancel • x clear done • tab/esc files • q quit"
 	case focusLocal:
-		return fmt.Sprintf("↑/↓ move • → open • ← up • / search • t/n sort:%s%s%s • r refresh • l/esc close • tab remote • q quit", m.localSort, m.hiddenHint(), m.compareHint())
+		return fmt.Sprintf("↑/↓ move • → open • ← up • enter upload • / search • t/n sort:%s%s%s • r refresh • l/esc close • tab remote • q quit", m.localSort, m.hiddenHint(), m.compareHint())
 	}
 	switch {
 	case m.localActive && len(m.transfers) > 0:

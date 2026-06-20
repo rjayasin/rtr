@@ -1,6 +1,7 @@
 // Command rtr is a terminal UI for browsing bookmarked remote SSH hosts and
-// pulling files/directories down to the local machine via rsync, with live
-// progress. See README.md for details.
+// transferring files/directories between the remote and local machine via
+// rsync — pulling them down or pushing them up — with live progress. See
+// README.md for details.
 //
 // Usage:
 //

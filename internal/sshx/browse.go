@@ -105,6 +105,31 @@ func (s *Session) PathSize(root string) (int64, error) {
 	return total, nil
 }
 
+// MkdirAll creates a remote directory and any missing parents (a no-op if it
+// already exists), so an upload destination is present before rsync runs.
+func (s *Session) MkdirAll(dir string) error {
+	return s.sftp.MkdirAll(dir)
+}
+
+// Stat returns file info for a remote path. A missing file yields an error
+// satisfying errors.Is(err, fs.ErrNotExist), letting callers tell "absent" apart
+// from other failures — so upload cleanup only ever deletes a path it has
+// confirmed did not already exist.
+func (s *Session) Stat(p string) (fs.FileInfo, error) {
+	return s.sftp.Stat(p)
+}
+
+// RemoveAll deletes a remote file or directory tree. It is best-effort cleanup
+// for the partial files a cancelled upload leaves behind.
+func (s *Session) RemoveAll(p string) error {
+	return s.sftp.RemoveAll(p)
+}
+
+// Glob expands a remote glob pattern, used to find rsync's temp files.
+func (s *Session) Glob(pattern string) ([]string, error) {
+	return s.sftp.Glob(pattern)
+}
+
 // Close tears down the SFTP and SSH connections.
 func (s *Session) Close() error {
 	if s.sftp != nil {

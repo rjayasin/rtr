@@ -97,6 +97,27 @@ func (m model) updateLocalFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.localCursor, m.localOffset = 0, 0
 	case "r":
 		m.loadLocal()
+	case "enter":
+		// Mirror of the remote pane's download: open the destination popover for
+		// the file/directory under the cursor, prefilled with the remote dir, and
+		// queue a background upload on confirm. Requires an active connection.
+		e, ok := m.currentLocal()
+		if !ok || m.session == nil {
+			return m, nil
+		}
+		src := filepath.Join(m.localCwd, e.name)
+		m.pendingSources = []string{src}
+		m.pendingSize = 0
+		m.sizeReqID++
+		m.sizeLoading = true
+		sizeCalc := localSizeCmd(m.sizeReqID, m.pendingSources)
+		m.destInput.SetValue(m.defaultUploadDest())
+		m.destInput.Focus()
+		m.destInput.CursorEnd()
+		m.destActive = true
+		m.destUpload = true
+		m.err = nil
+		return m, sizeCalc
 	}
 	m.clampLocalScroll()
 	return m, nil
@@ -109,6 +130,12 @@ func (m model) defaultDest() string {
 		return m.localCwd
 	}
 	return m.startDir
+}
+
+// defaultUploadDest is the remote directory a new upload is pre-filled with: the
+// directory currently open in the remote pane.
+func (m model) defaultUploadDest() string {
+	return m.cwd
 }
 
 // loadLocal reads localCwd into localEntries, sorted by the active mode, and

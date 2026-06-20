@@ -1,5 +1,6 @@
-// Package transfer runs rsync downloads in the background, parsing rsync's
-// progress output into a stream of events the UI can render and cancel.
+// Package transfer runs rsync transfers (downloads and uploads) in the
+// background, parsing rsync's progress output into a stream of events the UI can
+// render and cancel.
 package transfer
 
 import (
@@ -15,13 +16,17 @@ import (
 	"github.com/rjayasin/rtr/internal/config"
 )
 
-// Job describes one remote->local rsync pull: one or more remote source paths on
-// the bookmark's host, copied into LocalDest on this machine.
+// Job describes one rsync transfer between this machine and the bookmark's host.
+// For a download (the default) Sources are remote paths copied into LocalDest on
+// this machine; for an upload (Upload set) Sources are local paths copied into
+// RemoteDest on the host.
 type Job struct {
-	Bookmark  config.Bookmark
-	Sources   []string // absolute remote paths
-	LocalDest string
-	Cfg       config.RsyncConfig
+	Bookmark   config.Bookmark
+	Sources    []string // absolute source paths (remote for download, local for upload)
+	LocalDest  string   // download destination directory (local)
+	RemoteDest string   // upload destination directory (remote)
+	Upload     bool
+	Cfg        config.RsyncConfig
 }
 
 // sshTransport builds the `ssh ...` string passed to rsync's -e option, carrying
@@ -65,6 +70,12 @@ func BuildArgs(j Job) []string {
 
 	if t := sshTransport(j.Bookmark); t != "" {
 		args = append(args, "-e", t)
+	}
+	if j.Upload {
+		// Local sources copied up into the remote destination directory.
+		args = append(args, j.Sources...)
+		args = append(args, j.Bookmark.Target()+":"+j.RemoteDest)
+		return args
 	}
 	for _, src := range j.Sources {
 		args = append(args, j.Bookmark.Target()+":"+src)
