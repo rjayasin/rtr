@@ -22,19 +22,6 @@ go install github.com/rjayasin/rtr@latest
 make build && ./rtr
 ```
 
-## Updating
-
-If you installed a release binary, rtr can update itself in place:
-
-```sh
-rtr update    # fetch the latest release and replace the running binary
-```
-
-rtr also checks for a newer release at startup and shows a notice on the
-bookmarks screen when one is available. Set `RTR_NO_UPDATE_CHECK=1` to disable
-that check. (Source builds report version `dev` and are not auto-nagged; run
-`rtr update` to move onto a published release.)
-
 ## Usage
 
 ```sh
@@ -42,7 +29,6 @@ rtr                      # launch the TUI
 rtr config               # open the config file in $EDITOR (creating it if needed)
 rtr update               # update to the latest release
 rtr version              # print the version
-rtr --config ./my.toml   # use a specific config file
 rtr --config-path        # print where the config lives
 ```
 
@@ -95,6 +81,19 @@ Auth prefers `ssh-agent`, then the bookmark's identity file, then the usual
 `~/.ssh/known_hosts`: unknown hosts are trusted on first use, changed keys are
 rejected.
 
+## Updating
+
+If you installed a release binary, rtr can update itself in place:
+
+```sh
+rtr update    # fetch the latest release and replace the running binary
+```
+
+rtr also checks for a newer release at startup and shows a notice on the
+bookmarks screen when one is available. Set `RTR_NO_UPDATE_CHECK=1` to disable
+that check. (Source builds report version `dev` and are not auto-nagged; run
+`rtr update` to move onto a published release.)
+
 ## Development
 
 ```sh
@@ -103,8 +102,8 @@ go vet ./...
 gofmt -l .
 ```
 
-Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea),
-[pkg/sftp](https://github.com/pkg/sftp), and `golang.org/x/crypto/ssh`.
+## Why does this project exist
+I wanted the ease of navigation you get from an SFTP browser with the speed of rsync. 
 
 ## License
 

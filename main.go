@@ -35,7 +35,7 @@ func main() {
 	if len(args) > 0 {
 		switch args[0] {
 		case "config":
-			runConfig(args[1:])
+			runConfig()
 			return
 		case "update":
 			runUpdate()
@@ -70,7 +70,6 @@ func runUpdate() {
 
 func runTUI(args []string) {
 	fs := flag.NewFlagSet("rtr", flag.ExitOnError)
-	configPath := fs.String("config", "", "path to config file (default: $XDG_CONFIG_HOME/rtr/config.toml)")
 	showPath := fs.Bool("config-path", false, "print the config file path and exit")
 	fs.Usage = func() {
 		fmt.Fprint(os.Stderr,
@@ -85,10 +84,14 @@ func runTUI(args []string) {
 	_ = fs.Parse(args)
 
 	if *showPath {
-		fmt.Println(resolvePath(*configPath))
+		dp, err := config.DefaultPath()
+		if err != nil {
+			fail(err)
+		}
+		fmt.Println(dp)
 		return
 	}
-	cfg, err := config.Load(*configPath)
+	cfg, err := config.Load("")
 	if err != nil {
 		fail(err)
 	}
@@ -99,29 +102,14 @@ func runTUI(args []string) {
 
 // runConfig implements `rtr config`: ensure the config file exists (creating it
 // with defaults if needed), then open it in the user's editor.
-func runConfig(args []string) {
-	fs := flag.NewFlagSet("rtr config", flag.ExitOnError)
-	configPath := fs.String("config", "", "path to config file (default: $XDG_CONFIG_HOME/rtr/config.toml)")
-	_ = fs.Parse(args)
-
-	cfg, err := config.Load(*configPath)
+func runConfig() {
+	cfg, err := config.Load("")
 	if err != nil {
 		fail(err)
 	}
 	if err := openInEditor(cfg.Path()); err != nil {
 		fail(err)
 	}
-}
-
-func resolvePath(p string) string {
-	if p != "" {
-		return p
-	}
-	dp, err := config.DefaultPath()
-	if err != nil {
-		fail(err)
-	}
-	return dp
 }
 
 // editorCommand returns the editor argv, honoring $EDITOR, then $VISUAL, then vi.
