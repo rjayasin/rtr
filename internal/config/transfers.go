@@ -6,13 +6,15 @@ import (
 	"path/filepath"
 )
 
-// PendingTransfer is an in-progress download persisted across runs so rtr can
+// PendingTransfer is an in-progress transfer persisted across runs so rtr can
 // auto-resume it on the next launch. It is stored as transfers.json beside the
-// config file.
+// config file. Dest is the local destination for a download, or the remote
+// destination when Upload is set.
 type PendingTransfer struct {
 	Bookmark Bookmark `json:"bookmark"`
 	Sources  []string `json:"sources"`
 	Dest     string   `json:"dest"`
+	Upload   bool     `json:"upload,omitempty"`
 }
 
 // TransfersPath returns the resume file located beside the given config file.

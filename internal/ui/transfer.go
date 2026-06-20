@@ -14,16 +14,18 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/rjayasin/rtr/internal/config"
+	"github.com/rjayasin/rtr/internal/sshx"
 	"github.com/rjayasin/rtr/internal/transfer"
 )
 
-// xfer is the live state of one background download, shown in the bottom panel.
+// xfer is the live state of one background transfer, shown in the bottom panel.
 type xfer struct {
 	id        int
-	label     string // file name, or "N items"
-	dest      string
+	label     string          // file name, or "N items"
+	dest      string          // local dir for a download, remote dir for an upload
+	upload    bool            // direction: false = download (remote→local), true = upload
 	bookmark  config.Bookmark // for persistence / auto-resume
-	sources   []string        // remote source paths
+	sources   []string        // source paths (remote for download, local for upload)
 	pct       float64
 	rate      string
 	eta       string
@@ -43,10 +45,13 @@ type xfer struct {
 
 // job builds the rsync job for this transfer.
 func (x *xfer) job(rc config.RsyncConfig) transfer.Job {
+	if x.upload {
+		return transfer.Job{Bookmark: x.bookmark, Sources: x.sources, RemoteDest: x.dest, Upload: true, Cfg: rc}
+	}
 	return transfer.Job{Bookmark: x.bookmark, Sources: x.sources, LocalDest: x.dest, Cfg: rc}
 }
 
-// activeTransfers counts downloads that are still running (not done/cancelled).
+// activeTransfers counts transfers that are still running (not done/cancelled).
 func (m model) activeTransfers() int {
 	n := 0
 	for _, x := range m.transfers {
@@ -65,7 +70,7 @@ func (m model) persistTransfers() {
 		if x.done || x.cancelled {
 			continue
 		}
-		pend = append(pend, config.PendingTransfer{Bookmark: x.bookmark, Sources: x.sources, Dest: x.dest})
+		pend = append(pend, config.PendingTransfer{Bookmark: x.bookmark, Sources: x.sources, Dest: x.dest, Upload: x.upload})
 	}
 	_ = config.SavePendingTransfers(m.transfersPath, pend)
 }
@@ -131,18 +136,31 @@ func (m model) handleEvent(id int, ev transfer.Event) (tea.Model, tea.Cmd) {
 			x.cancel()
 			x.cancel = nil
 		}
+		// The process has now exited, so it is safe to remove the partial files it
+		// left behind. A download's partials are local and cleaned immediately; an
+		// upload's are remote and cleaned in the background over SFTP.
+		var cleanup tea.Cmd
 		if x.cancelled {
-			// The process has now exited, so it is safe to remove the partial
-			// files it left behind.
-			cleanupPartial(x)
+			if x.upload {
+				cleanup = m.remoteCleanupCmd(x)
+			} else {
+				cleanupPartial(x)
+			}
 		}
 		m.persistTransfers() // drop the finished transfer from the resume file
-		// If the local pane is showing the directory this transfer wrote to,
-		// refresh it so the newly-arrived files appear.
+		// If the pane showing the directory this transfer wrote to is open,
+		// refresh it so the newly-arrived files appear: the local pane for a
+		// download, the remote listing for an upload.
+		if x.upload {
+			if x.err == nil && m.session != nil && path.Clean(x.dest) == path.Clean(m.cwd) {
+				return m, listCmd(m.session, m.cwd)
+			}
+			return m, cleanup
+		}
 		if m.localActive && filepath.Clean(x.dest) == filepath.Clean(m.localCwd) {
 			m.reloadLocal()
 		}
-		return m, nil
+		return m, cleanup
 	case ev.Progress != nil:
 		x.pct = ev.Progress.Percent
 		x.rate = ev.Progress.Rate
@@ -182,6 +200,54 @@ func cleanupPartial(x *xfer) {
 		for _, mt := range matches {
 			os.Remove(mt)
 		}
+	}
+}
+
+// remoteCleanupTargets is cleanupTargets for an upload: it computes the remote
+// entries to delete if the upload is cancelled — the top-level destination
+// entries that did not already exist (so a pre-existing remote file is never
+// destroyed), plus rsync's temp-file glob for each source. Existence is checked
+// up front, while the session is known-good; a target whose Stat fails for any
+// reason other than "not found" is left alone, never queued for deletion.
+func remoteCleanupTargets(s *sshx.Session, dest string, sources []string) (remove, globs []string) {
+	for _, src := range sources {
+		base := filepath.Base(src) // the name as it lands on the remote
+		target := path.Join(dest, base)
+		if _, err := s.Stat(target); errors.Is(err, os.ErrNotExist) {
+			remove = append(remove, target)
+		}
+		globs = append(globs, path.Join(dest, "."+base+".??????"))
+	}
+	return remove, globs
+}
+
+// remoteCleanupCmd removes, in the background over SFTP, the partial files a
+// cancelled upload left on the remote. It runs only when the current session is
+// still connected to the very same host the upload used, so it can never touch
+// the wrong machine; if the session is gone or now points elsewhere, the
+// partials are left in place rather than risk deleting something unrelated.
+func (m model) remoteCleanupCmd(x *xfer) tea.Cmd {
+	s := m.session
+	if s == nil || s.Bookmark != x.bookmark {
+		return nil
+	}
+	remove := append([]string(nil), x.cleanupRemove...)
+	globs := append([]string(nil), x.cleanupGlobs...)
+	if len(remove) == 0 && len(globs) == 0 {
+		return nil
+	}
+	return func() tea.Msg {
+		for _, g := range globs {
+			if matches, err := s.Glob(g); err == nil {
+				for _, mt := range matches {
+					s.RemoveAll(mt)
+				}
+			}
+		}
+		for _, p := range remove {
+			s.RemoveAll(p)
+		}
+		return nil
 	}
 }
 
@@ -234,6 +300,11 @@ func (m model) transfersView() string {
 		if m.focus == focusTransfers && i == m.xferCursor {
 			marker = cursorStyle.Render("➤ ")
 		}
+		// Direction arrow distinguishes uploads (↑) from downloads (↓).
+		dir := dimStyle.Render("↓ ")
+		if x.upload {
+			dir = dimStyle.Render("↑ ")
+		}
 		name := padRight(truncate(x.label, nw), nw)
 		var right string
 		switch {
@@ -261,7 +332,7 @@ func (m model) transfersView() string {
 				right += " " + dimStyle.Render(strings.Join(parts, " "))
 			}
 		}
-		rows = append(rows, marker+name+" "+right)
+		rows = append(rows, marker+dir+name+" "+right)
 	}
 	return strings.Join(rows, "\n")
 }
@@ -269,7 +340,7 @@ func (m model) transfersView() string {
 // quitConfirmBox renders the "downloads in progress — quit anyway?" prompt.
 func (m model) quitConfirmBox() string {
 	inner := strings.Join([]string{
-		errStyle.Render("Downloads in progress"),
+		errStyle.Render("Transfers in progress"),
 		fmt.Sprintf("%d still running — they will resume next launch.", m.activeTransfers()),
 		"",
 		"Quit anyway?  " + helpStyle.Render("y / n"),
@@ -322,23 +393,31 @@ func choiceButton(text string, selected bool) string {
 // destPopover renders the local-destination prompt as a bordered box that is
 // overlaid on top of the file list.
 func (m model) destPopover() string {
-	// Size is shown inline with the title: "Download N items • <size>", with a
-	// spinner standing in for the size while the background walk is running.
-	title := okStyle.Render("Download "+countLabel(len(m.pendingSources))) + dimStyle.Render(" • ")
+	// Size is shown inline with the title: "Download N items • <size>" (or
+	// "Upload …" for an upload), with a spinner standing in for the size while the
+	// background walk is running.
+	verb := "Download"
+	if m.destUpload {
+		verb = "Upload"
+	}
+	title := okStyle.Render(verb+" "+countLabel(len(m.pendingSources))) + dimStyle.Render(" • ")
 	if m.sizeLoading {
 		title += m.spinner.View() + dimStyle.Render(" calculating…")
 	} else {
 		title += dimStyle.Render(humanSize(m.pendingSize))
 	}
 
-	// List every selected file by name (not its full remote path), one per line,
-	// so the user sees exactly what will be downloaded.
+	// List every selected file by name (not its full path), one per line, so the
+	// user sees exactly what will be transferred.
 	names := make([]string, len(m.pendingSources))
 	for i, s := range m.pendingSources {
 		names[i] = path.Base(s)
 	}
 
 	second := dimStyle.Render("Save to:")
+	if m.destUpload {
+		second = dimStyle.Render("Upload to:")
+	}
 	if m.err != nil {
 		second = errStyle.Render(m.err.Error())
 	}

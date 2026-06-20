@@ -8,6 +8,7 @@ import (
 	"context"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -56,8 +57,10 @@ type model struct {
 	focus      focusArea // which pane the arrow keys scroll
 	xferCursor int       // highlighted transfer when focus is on the panel
 
-	// destination popover (overlaid on the browser)
+	// destination popover (overlaid on the browser); shared by downloads (from the
+	// remote pane) and uploads (from the local pane, when destUpload is set).
 	destActive     bool
+	destUpload     bool
 	destInput      textinput.Model
 	pendingSources []string
 	pendingSize    int64  // total recursive size of the sources, once computed
@@ -164,6 +167,7 @@ func New(cfg *config.Config, version string) model {
 				id:       m.nextXfer,
 				label:    transferLabel(p.Sources),
 				dest:     p.Dest,
+				upload:   p.Upload,
 				bookmark: p.Bookmark,
 				sources:  p.Sources,
 			})
@@ -270,6 +274,37 @@ func sizeCmd(id int, s *sshx.Session, sources []string) tea.Cmd {
 		}
 		return sizeMsg{id: id, size: total}
 	}
+}
+
+// localSizeCmd walks each local source and sums their sizes, posting a sizeMsg
+// when done — the upload popover's counterpart to sizeCmd, which walks the
+// remote over SFTP.
+func localSizeCmd(id int, sources []string) tea.Cmd {
+	srcs := append([]string(nil), sources...) // snapshot; caller may mutate
+	return func() tea.Msg {
+		var total int64
+		for _, src := range srcs {
+			total += localPathSize(src)
+		}
+		return sizeMsg{id: id, size: total}
+	}
+}
+
+// localPathSize returns the total size in bytes of a local path: the file size
+// for a regular file, or the summed size of every file beneath a directory.
+// Unreadable entries are skipped rather than failing the whole walk.
+func localPathSize(root string) int64 {
+	var total int64
+	filepath.WalkDir(root, func(_ string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if info, err := d.Info(); err == nil {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total
 }
 
 // checkUpdateCmd looks up the latest release in the background and, only if a
