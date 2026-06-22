@@ -3,27 +3,19 @@
 [![CI](https://github.com/rjayasin/rtr/actions/workflows/ci.yml/badge.svg)](https://github.com/rjayasin/rtr/actions/workflows/ci.yml)
 
 ```text
- remote  /srv/files
-
-    [ ]           backups/
-    [x]     5.7G  ubuntu-24.04.2-desktop-amd64.iso
- ➤  [x]     4.2G  screen-recording.mp4
-          ╭─────────────────────────────────────────────╮
-          │ Download 2 items • 9.9G                     │
-          │ ubuntu-24.04.2-desktop-amd64.iso            │
-          │ screen-recording.mp4                        │
-          │                                             │
-          │ Save to:                                    │
-          │ ~/Downloads                                 │
-          │                                             │
-          │ enter start • esc cancel                    │
-          ╰─────────────────────────────────────────────╯
- 2 selected                                            rtr — nas
- ──────────────────────────────────────────────────────────────
+ remote: /srv/files                               │ local ~/Downloads                           
+                                                  │                                             
+   [ ]           backups/                         │             project-backup/                 
+   [x]     5.7G  ubuntu-24.04.2-desktop-amd64.iso │ ➤   248.0K  report-final.pdf                
+   [x]     4.2G  screen-recording.mp4             │       1.2M  screenshot.png                  
+   [ ]   663.0M  debian-12.5.0-amd64-netinst.iso  │      12.0K  notes.txt                       
+   [ ]    12.0K  notes.txt                        │       4.2K  data.csv                        
+ 2 selected                                                                            rtr — nas
+ ───────────────────────────────────────────────────────────────────────────────────────────────
  transfers (2 active)
    ↓ archlinux-2024.04.01-x86_64.iso  ████████░░░░░  62%   18MB/s ETA 0:42
    ↑ site-backup.tar.zst              ███░░░░░░░░░░  24%  9.1MB/s ETA 1:55
- ↑/↓ move • → open • enter download • l local • tab transfers
+ ↑/↓ move • → open • ← up • enter upload • / search • ~ compare • tab remote • l/esc close
 ```
 
 A terminal UI for moving files over SSH. Bookmark hosts, browse them over SFTP,
