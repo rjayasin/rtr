@@ -119,9 +119,10 @@ that check. (Source builds report version `dev` and are not auto-nagged; run
 ## Development
 
 ```sh
-make test
-make vet
-make fmt
+make          # compile and launch rtr
+make test     # run the test suite
+make vet      # run go vet
+make fmt      # format all Go sources
 ```
 
 ## Why does this project exist
