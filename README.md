@@ -119,9 +119,9 @@ that check. (Source builds report version `dev` and are not auto-nagged; run
 ## Development
 
 ```sh
-go test ./...
-go vet ./...
-gofmt -l .
+make test
+make vet
+make fmt
 ```
 
 ## Why does this project exist
