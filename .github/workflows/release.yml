@@ -6,14 +6,7 @@ name: Release
 on:
   push:
     branches: [main]
-    # Docs- or test-only pushes shouldn't cut a release. When every file changed
-    # by the push matches one of these patterns, the workflow doesn't run, so no
-    # new version is tagged. Test files (*_test.go) are never compiled into the
-    # binary, so changing them alone produces an identical release. This is a
-    # denylist: anything not listed here (Go code, go.mod/go.sum, the goreleaser
-    # config, …) still triggers a release, so a real change is never silently
-    # missed — the worst case is an occasional harmless release on a file type we
-    # forgot to add.
+    # Don't cut a release for docs- or test-only pushes.
     paths-ignore:
       - '*.md'
       - '**/*.md'
