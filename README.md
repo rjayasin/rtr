@@ -21,8 +21,8 @@
  2 selected                                            rtr — nas
  ──────────────────────────────────────────────────────────────
  transfers (2 active)
-   ↓ ubuntu-24.04.2-desktop-amd64.iso  ████████░░░░░  62%   18MB/s ETA 0:42
-   ↑ site-backup.tar.zst               ███░░░░░░░░░░  24%  9.1MB/s ETA 1:55
+   ↓ archlinux-2024.04.01-x86_64.iso  ████████░░░░░  62%   18MB/s ETA 0:42
+   ↑ site-backup.tar.zst              ███░░░░░░░░░░  24%  9.1MB/s ETA 1:55
  ↑/↓ move • → open • enter download • l local • tab transfers
 ```
 
