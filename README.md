@@ -3,28 +3,29 @@
 [![CI](https://github.com/rjayasin/rtr/actions/workflows/ci.yml/badge.svg)](https://github.com/rjayasin/rtr/actions/workflows/ci.yml)
 
 ```text
- remote: /srv/files                               │ local ~/Downloads                           
+ remote /srv/files                                │ local: ~/Downloads                          
                                                   │                                             
    [ ]           backups/                         │             project-backup/                 
-   [ ]     5.7G  ubuntu-24.04.2-desktop-amd64.iso │ ➤   248.0K  report-final.pdf                
-   [ ]     4.2G  screen-recording.mp4             │       1.2M  screenshot.png                  
+   [x]     5.7G  ubuntu-24.04.2-desktop-amd64.iso │     248.0K  report-final.pdf                
+ ➤ [x]     4.2G  screen-recording.mp4             │       1.2M  screenshot.png                  
                                                                                                 
                              ╭────────────────────────────────────╮
-                             │ Upload 1 item • 248.0K             │
-                             │ report-final.pdf                   │
+                             │ Download 2 items • 9.9G            │
+                             │ ubuntu-24.04.2-desktop-amd64.iso   │
+                             │ screen-recording.mp4               │
                              │                                    │
-                             │ Upload to:                         │
-                             │ /srv/files                         │
+                             │ Save to:                           │
+                             │ ~/Downloads                        │
                              │                                    │
                              │ enter start • esc cancel           │
                              ╰────────────────────────────────────╯
                                                                                                 
-                                                                                       rtr — nas
+ 2 selected                                                                            rtr — nas
  ───────────────────────────────────────────────────────────────────────────────────────────────
  transfers (2 active)
    ↓ archlinux-2024.04.01-x86_64.iso  ████████░░░░░  62%   18MB/s ETA 0:42
    ↑ site-backup.tar.zst              ███░░░░░░░░░░  24%  9.1MB/s ETA 1:55
- ↑/↓ move • → open • ← up • enter upload • / search • ~ compare • tab remote • l/esc close
+ ↑/↓ move • → open • x/space select • enter download • l local • tab panes
 ```
 
 A terminal UI for moving files over SSH. Bookmark hosts, browse them over SFTP,
