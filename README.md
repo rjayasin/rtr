@@ -3,15 +3,15 @@
 [![CI](https://github.com/rjayasin/rtr/actions/workflows/ci.yml/badge.svg)](https://github.com/rjayasin/rtr/actions/workflows/ci.yml)
 
 ```text
- remote  /srv/images
+ remote  /srv/files
 
     [ ]           backups/
     [x]     5.7G  ubuntu-24.04.2-desktop-amd64.iso
- ➤  [x]   663.0M  debian-12.5.0-amd64-netinst.iso
+ ➤  [x]     4.2G  screen-recording.mp4
           ╭─────────────────────────────────────────────╮
-          │ Download 2 items • 6.3G                     │
+          │ Download 2 items • 9.9G                     │
           │ ubuntu-24.04.2-desktop-amd64.iso            │
-          │ debian-12.5.0-amd64-netinst.iso             │
+          │ screen-recording.mp4                        │
           │                                             │
           │ Save to:                                    │
           │ ~/Downloads                                 │
