@@ -6,6 +6,13 @@ name: Release
 on:
   push:
     branches: [main]
+    # Don't cut a release for docs- or test-only pushes.
+    paths-ignore:
+      - '*.md'
+      - '**/*.md'
+      - 'LICENSE'
+      - '*_test.go'
+      - '**/*_test.go'
 
 permissions:
   contents: write

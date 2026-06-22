@@ -2,11 +2,35 @@
 
 [![CI](https://github.com/rjayasin/rtr/actions/workflows/ci.yml/badge.svg)](https://github.com/rjayasin/rtr/actions/workflows/ci.yml)
 
-A terminal UI file-transfer client. Bookmark remote SSH hosts, browse their
-directories over SFTP, pick files or folders, and pull them down with `rsync` —
-or open the local pane and push a file or folder back up the same way. Transfers
-run in the background while you keep browsing, with progress bars stacked at the
-bottom of the window.
+```text
+ remote /srv/files                                │ local: ~/Downloads                          
+                                                  │                                             
+   [ ]           backups/                         │             project-backup/                 
+   [x]     5.7G  ubuntu-24.04.2-desktop-amd64.iso │     248.0K  report-final.pdf                
+ ➤ [x]     4.2G  screen-recording.mp4             │       1.2M  screenshot.png                  
+                                                                                                
+                             ╭────────────────────────────────────╮
+                             │ Download 2 items • 9.9G            │
+                             │ ubuntu-24.04.2-desktop-amd64.iso   │
+                             │ screen-recording.mp4               │
+                             │                                    │
+                             │ Save to:                           │
+                             │ ~/Downloads                        │
+                             │                                    │
+                             │ enter start • esc cancel           │
+                             ╰────────────────────────────────────╯
+                                                                                                
+ 2 selected                                                                            rtr — nas
+ ───────────────────────────────────────────────────────────────────────────────────────────────
+ transfers (2 active)
+   ↓ archlinux-2024.04.01-x86_64.iso  ████████░░░░░  62%   18MB/s ETA 0:42
+   ↑ site-backup.tar.zst              ███░░░░░░░░░░  24%  9.1MB/s ETA 1:55
+ ↑/↓ move • → open • ← up • x/space select • / search • l local • enter download • t/n sort:newest • . hidden • a all • c clear • r refresh • esc back • ~ compare • tab panes
+```
+
+A terminal UI for moving files over SSH. Bookmark hosts, browse them over SFTP,
+and pull files down or push them back up with `rsync` (the command and its flags
+are configurable). Transfers run in the background while you keep browsing.
 
 ## Install
 
@@ -27,24 +51,20 @@ make build && ./rtr
 ```sh
 rtr                      # launch the TUI
 rtr config               # open the config file in $EDITOR (creating it if needed)
+rtr --config-path        # print where the config lives
 rtr update               # update to the latest release
 rtr version              # print the version
-rtr --config-path        # print where the config lives
 ```
 
 ### Keys
 
 | Screen     | Keys |
 |------------|------|
-| Bookmarks  | `↑/↓` move · `enter` connect · `n` new · `e` edit · `d` delete · `tab` focus transfers · `q` quit |
-| Form       | `tab`/`↑↓` change field · `enter` save · `esc` cancel |
-| Browser    | `↑/↓` move · `→` open dir · `←` up · `x`/`space` select · `a` all · `c` clear · `/` search · `l` local pane · `t` sort by time (toggle newest/oldest) · `n` sort by name (toggle A→Z/Z→A) · `enter` download · `tab` switch pane · `r` refresh · `esc` disconnect (or clear filter) |
-| Search (`/`) | type to filter by name (case-insensitive, matches anywhere) · `enter` accept and return to the list · `esc` clear |
-| Local pane (`l`) | a split view of the directory rtr was launched from · `↑/↓` move · `→` open dir · `←` up · `enter` upload to the remote dir · `/` search · `t` sort by time · `n` sort by name · `~` compare · `r` refresh · `tab` switch to remote · `l`/`esc` close |
+| Bookmarks  | `↑/↓` move<br>`enter` connect<br>`n` new<br>`e` edit<br>`d` delete<br>`tab` focus transfers<br>`q` quit |
+| Browser    | `↑/↓` move<br>`→` open dir<br>`←` up<br>`x`/`space` select<br>`a` all<br>`c` clear<br>`/` search<br>`l` toggle local pane<br>`~` toggle compare<br>`t` sort by time (toggle newest/oldest)<br>`n` sort by name (toggle A→Z/Z→A)<br>`.` toggle hidden files<br>`enter` download<br>`tab` switch pane<br>`r` refresh<br>`esc` disconnect (or clear filter) |
+| Search (`/`) | type to filter by name (case-insensitive, matches anywhere)<br>`enter` accept and return to the list<br>`esc` clear |
 | Compare (`~`) | with the local pane open, dims files present in **both** panes and sinks them to the bottom of each pane (unique files stay on top); each group still follows the pane's sort order |
-| Disconnect prompt | `←/→` select Yes/No · `enter` confirm · `y` disconnect · `n`/`esc` stay connected |
-| Transfers (`tab`) | `↑/↓` select · `c` cancel highlighted · `x` clear finished · `tab`/`esc` back |
-| Transfer popover | `enter` start (in background) · `esc` cancel — opened by `enter` on the remote pane (download) or the local pane (upload) |
+| Transfers (`tab`) | `↑/↓` select<br>`c` cancel highlighted<br>`x` clear finished<br>`tab`/`esc` back |
 
 In-progress transfers (downloads and uploads) are recorded in `transfers.json`
 (beside the config) and resumed on the next launch if you quit or rtr is
@@ -97,9 +117,10 @@ that check. (Source builds report version `dev` and are not auto-nagged; run
 ## Development
 
 ```sh
-go test ./...
-go vet ./...
-gofmt -l .
+make          # compile and launch rtr
+make test     # run the test suite
+make vet      # run go vet
+make fmt      # format all Go sources
 ```
 
 ## Why does this project exist
