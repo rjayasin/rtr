@@ -3,19 +3,26 @@
 [![CI](https://github.com/rjayasin/rtr/actions/workflows/ci.yml/badge.svg)](https://github.com/rjayasin/rtr/actions/workflows/ci.yml)
 
 ```text
- remote  /volume1/media
+ remote  /srv/images
 
-    [ ]           Movies/
- ➤  [x]     4.7G  Interstellar.2014.mkv
-    [x]     1.2G  Arrival.2016.mkv
-    [ ]   248.6M  trailer.mp4
-    [ ]    12.4K  notes.txt
-
+    [ ]           backups/
+    [x]     5.7G  ubuntu-24.04.2-desktop-amd64.iso
+ ➤  [x]   663.0M  debian-12.5.0-amd64-netinst.iso
+          ╭─────────────────────────────────────────────╮
+          │ Download 2 items • 6.3G                     │
+          │ ubuntu-24.04.2-desktop-amd64.iso            │
+          │ debian-12.5.0-amd64-netinst.iso             │
+          │                                             │
+          │ Save to:                                    │
+          │ ~/Downloads                                 │
+          │                                             │
+          │ enter start • esc cancel                    │
+          ╰─────────────────────────────────────────────╯
  2 selected                                            rtr — nas
  ──────────────────────────────────────────────────────────────
  transfers (2 active)
-   ↓ Interstellar.2014.mkv  ██████████░░░░░░  62%   18MB/s ETA 0:42
-   ↑ backup.tar.gz          ████░░░░░░░░░░░░  24%  9.1MB/s ETA 1:55
+   ↓ ubuntu-24.04.2-desktop-amd64.iso  ████████░░░░░  62%   18MB/s ETA 0:42
+   ↑ site-backup.tar.zst               ███░░░░░░░░░░  24%  9.1MB/s ETA 1:55
  ↑/↓ move • → open • enter download • l local • tab transfers
 ```
 
