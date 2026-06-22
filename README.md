@@ -6,11 +6,20 @@
  remote: /srv/files                               │ local ~/Downloads                           
                                                   │                                             
    [ ]           backups/                         │             project-backup/                 
-   [x]     5.7G  ubuntu-24.04.2-desktop-amd64.iso │ ➤   248.0K  report-final.pdf                
-   [x]     4.2G  screen-recording.mp4             │       1.2M  screenshot.png                  
-   [ ]   663.0M  debian-12.5.0-amd64-netinst.iso  │      12.0K  notes.txt                       
-   [ ]    12.0K  notes.txt                        │       4.2K  data.csv                        
- 2 selected                                                                            rtr — nas
+   [ ]     5.7G  ubuntu-24.04.2-desktop-amd64.iso │ ➤   248.0K  report-final.pdf                
+   [ ]     4.2G  screen-recording.mp4             │       1.2M  screenshot.png                  
+                                                                                                
+                             ╭────────────────────────────────────╮
+                             │ Upload 1 item • 248.0K             │
+                             │ report-final.pdf                   │
+                             │                                    │
+                             │ Upload to:                         │
+                             │ /srv/files                         │
+                             │                                    │
+                             │ enter start • esc cancel           │
+                             ╰────────────────────────────────────╯
+                                                                                                
+                                                                                       rtr — nas
  ───────────────────────────────────────────────────────────────────────────────────────────────
  transfers (2 active)
    ↓ archlinux-2024.04.01-x86_64.iso  ████████░░░░░  62%   18MB/s ETA 0:42
