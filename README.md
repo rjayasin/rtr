@@ -52,14 +52,11 @@ rtr --config-path        # print where the config lives
 | Screen     | Keys |
 |------------|------|
 | Bookmarks  | `↑/↓` move · `enter` connect · `n` new · `e` edit · `d` delete · `tab` focus transfers · `q` quit |
-| Form       | `tab`/`↑↓` change field · `enter` save · `esc` cancel |
 | Browser    | `↑/↓` move · `→` open dir · `←` up · `x`/`space` select · `a` all · `c` clear · `/` search · `l` local pane · `t` sort by time (toggle newest/oldest) · `n` sort by name (toggle A→Z/Z→A) · `enter` download · `tab` switch pane · `r` refresh · `esc` disconnect (or clear filter) |
 | Search (`/`) | type to filter by name (case-insensitive, matches anywhere) · `enter` accept and return to the list · `esc` clear |
 | Local pane (`l`) | a split view of the directory rtr was launched from · `↑/↓` move · `→` open dir · `←` up · `enter` upload to the remote dir · `/` search · `t` sort by time · `n` sort by name · `~` compare · `r` refresh · `tab` switch to remote · `l`/`esc` close |
 | Compare (`~`) | with the local pane open, dims files present in **both** panes and sinks them to the bottom of each pane (unique files stay on top); each group still follows the pane's sort order |
-| Disconnect prompt | `←/→` select Yes/No · `enter` confirm · `y` disconnect · `n`/`esc` stay connected |
 | Transfers (`tab`) | `↑/↓` select · `c` cancel highlighted · `x` clear finished · `tab`/`esc` back |
-| Transfer popover | `enter` start (in background) · `esc` cancel — opened by `enter` on the remote pane (download) or the local pane (upload) |
 
 In-progress transfers (downloads and uploads) are recorded in `transfers.json`
 (beside the config) and resumed on the next launch if you quit or rtr is
