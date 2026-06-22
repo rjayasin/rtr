@@ -60,12 +60,12 @@ rtr version              # print the version
 
 | Screen     | Keys |
 |------------|------|
-| Bookmarks  | `↑/↓` move · `enter` connect · `n` new · `e` edit · `d` delete · `tab` focus transfers · `q` quit |
-| Browser    | `↑/↓` move · `→` open dir · `←` up · `x`/`space` select · `a` all · `c` clear · `/` search · `l` local pane · `t` sort by time (toggle newest/oldest) · `n` sort by name (toggle A→Z/Z→A) · `enter` download · `tab` switch pane · `r` refresh · `esc` disconnect (or clear filter) |
-| Search (`/`) | type to filter by name (case-insensitive, matches anywhere) · `enter` accept and return to the list · `esc` clear |
-| Local pane (`l`) | a split view of the directory rtr was launched from · `↑/↓` move · `→` open dir · `←` up · `enter` upload to the remote dir · `/` search · `t` sort by time · `n` sort by name · `~` compare · `r` refresh · `tab` switch to remote · `l`/`esc` close |
+| Bookmarks  | `↑/↓` move<br>`enter` connect<br>`n` new<br>`e` edit<br>`d` delete<br>`tab` focus transfers<br>`q` quit |
+| Browser    | `↑/↓` move<br>`→` open dir<br>`←` up<br>`x`/`space` select<br>`a` all<br>`c` clear<br>`/` search<br>`l` local pane<br>`t` sort by time (toggle newest/oldest)<br>`n` sort by name (toggle A→Z/Z→A)<br>`enter` download<br>`tab` switch pane<br>`r` refresh<br>`esc` disconnect (or clear filter) |
+| Search (`/`) | type to filter by name (case-insensitive, matches anywhere)<br>`enter` accept and return to the list<br>`esc` clear |
+| Local pane (`l`) | a split view of the directory rtr was launched from<br>`↑/↓` move<br>`→` open dir<br>`←` up<br>`enter` upload to the remote dir<br>`/` search<br>`t` sort by time<br>`n` sort by name<br>`~` compare<br>`r` refresh<br>`tab` switch to remote<br>`l`/`esc` close |
 | Compare (`~`) | with the local pane open, dims files present in **both** panes and sinks them to the bottom of each pane (unique files stay on top); each group still follows the pane's sort order |
-| Transfers (`tab`) | `↑/↓` select · `c` cancel highlighted · `x` clear finished · `tab`/`esc` back |
+| Transfers (`tab`) | `↑/↓` select<br>`c` cancel highlighted<br>`x` clear finished<br>`tab`/`esc` back |
 
 In-progress transfers (downloads and uploads) are recorded in `transfers.json`
 (beside the config) and resumed on the next launch if you quit or rtr is
