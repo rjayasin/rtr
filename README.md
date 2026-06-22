@@ -2,11 +2,26 @@
 
 [![CI](https://github.com/rjayasin/rtr/actions/workflows/ci.yml/badge.svg)](https://github.com/rjayasin/rtr/actions/workflows/ci.yml)
 
-A terminal UI file-transfer client. Bookmark remote SSH hosts, browse their
-directories over SFTP, pick files or folders, and pull them down with `rsync` —
-or open the local pane and push a file or folder back up the same way. Transfers
-run in the background while you keep browsing, with progress bars stacked at the
-bottom of the window.
+```text
+ remote  /volume1/media
+
+    [ ]           Movies/
+ ➤  [x]     4.7G  Interstellar.2014.mkv
+    [x]     1.2G  Arrival.2016.mkv
+    [ ]   248.6M  trailer.mp4
+    [ ]    12.4K  notes.txt
+
+ 2 selected                                            rtr — nas
+ ──────────────────────────────────────────────────────────────
+ transfers (2 active)
+   ↓ Interstellar.2014.mkv  ██████████░░░░░░  62%   18MB/s ETA 0:42
+   ↑ backup.tar.gz          ████░░░░░░░░░░░░  24%  9.1MB/s ETA 1:55
+ ↑/↓ move • → open • enter download • l local • tab transfers
+```
+
+A terminal UI for moving files over SSH. Bookmark hosts, browse them over SFTP,
+and pull files down or push them back up with `rsync` (the command and its flags
+are configurable). Transfers run in the background while you keep browsing.
 
 ## Install
 
