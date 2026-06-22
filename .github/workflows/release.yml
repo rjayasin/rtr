@@ -6,14 +6,18 @@ name: Release
 on:
   push:
     branches: [main]
-    # Docs-only pushes shouldn't cut a release. When every file changed by the
-    # push matches one of these patterns, the workflow doesn't run, so no new
-    # version is tagged. Any change to Go code, go.mod/go.sum, or the build and
-    # release config still triggers a release as before.
+    # Docs- or test-only pushes shouldn't cut a release. When every file changed
+    # by the push matches one of these patterns, the workflow doesn't run, so no
+    # new version is tagged. Test files (*_test.go) are never compiled into the
+    # binary, so changing them alone produces an identical release. Any change to
+    # non-test Go code, go.mod/go.sum, or the build and release config still
+    # triggers a release as before.
     paths-ignore:
       - '*.md'
       - '**/*.md'
       - 'LICENSE'
+      - '*_test.go'
+      - '**/*_test.go'
 
 permissions:
   contents: write
