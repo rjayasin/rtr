@@ -49,9 +49,9 @@ make build && ./rtr
 ```sh
 rtr                      # launch the TUI
 rtr config               # open the config file in $EDITOR (creating it if needed)
+rtr --config-path        # print where the config lives
 rtr update               # update to the latest release
 rtr version              # print the version
-rtr --config-path        # print where the config lives
 ```
 
 ### Keys
