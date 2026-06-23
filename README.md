@@ -38,7 +38,7 @@ are configurable). Transfers run in the background while you keep browsing.
 
 Download a prebuilt binary for your OS/arch from the
 [latest release](https://github.com/rjayasin/rtr/releases/latest), or build from
-source (requires Go 1.23+):
+source (requires Go 1.25+):
 
 ```sh
 go install github.com/rjayasin/rtr@latest
