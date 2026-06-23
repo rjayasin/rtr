@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -187,18 +186,7 @@ func (m *model) clearLocalSearch() {
 // dropped unless showHidden is on, and the remainder is narrowed to the current
 // query (case-insensitive substring on the name).
 func (m model) filteredLocalEntries() []localEntry {
-	q := strings.ToLower(strings.TrimSpace(m.localSearchInput.Value()))
-	out := make([]localEntry, 0, len(m.localEntries))
-	for _, e := range m.localEntries {
-		if !m.showHidden && strings.HasPrefix(e.name, ".") {
-			continue
-		}
-		if q != "" && !strings.Contains(strings.ToLower(e.name), q) {
-			continue
-		}
-		out = append(out, e)
-	}
-	return out
+	return filterByName(m.localEntries, func(e localEntry) string { return e.name }, m.showHidden, m.localSearchInput.Value())
 }
 
 // resortLocal re-orders the current local listing and returns the cursor to top.
@@ -270,38 +258,18 @@ func readLocalDir(dir string) ([]localEntry, error) {
 	return out, nil
 }
 
-// sortLocalEntries orders entries in place by the chosen key, with directories
-// and files interspersed — matching the remote pane's sortEntries semantics.
+// sortLocalEntries orders a local listing in place by the chosen key, matching
+// the remote pane's sortEntries semantics.
 func sortLocalEntries(entries []localEntry, mode sortMode) {
-	sort.SliceStable(entries, func(i, j int) bool {
-		a, b := entries[i], entries[j]
-		switch mode {
-		case sortTimeDesc:
-			if !a.modTime.Equal(b.modTime) {
-				return a.modTime.After(b.modTime) // newest first
-			}
-			return strings.ToLower(a.name) < strings.ToLower(b.name)
-		case sortTimeAsc:
-			if !a.modTime.Equal(b.modTime) {
-				return a.modTime.Before(b.modTime) // oldest first
-			}
-			return strings.ToLower(a.name) < strings.ToLower(b.name)
-		case sortNameDesc:
-			return strings.ToLower(a.name) > strings.ToLower(b.name)
-		default: // sortNameAsc
-			return strings.ToLower(a.name) < strings.ToLower(b.name)
-		}
-	})
+	sortByMode(entries, mode,
+		func(e localEntry) string { return e.name },
+		func(e localEntry) time.Time { return e.modTime })
 }
 
 // localListLines renders exactly rows lines of the local listing (padded with
 // blanks), mirroring the remote listLines layout minus the selection column.
-func (m model) localListLines(rows int) []string {
-	entries := m.displayedLocalEntries()
-	var common map[string]bool
-	if m.comparing() {
-		common = m.commonNames()
-	}
+func (m model) localListLines(rows int, common map[string]bool) []string {
+	entries := m.displayedLocalEntriesWith(common)
 	out := make([]string, 0, rows)
 	switch {
 	case m.localErr != nil:
@@ -336,7 +304,7 @@ func (m model) localListLines(rows int) []string {
 // browserColumns renders the remote and local listings side by side, separated
 // by a vertical divider. Each column carries its own breadcrumb header, so the
 // combined block is the same height as the single-pane body (rows + 2).
-func (m model) browserColumns() []string {
+func (m model) browserColumns(common map[string]bool) []string {
 	rows := m.visibleRows()
 	const sep = " │ "
 	lw := (m.width - len(sep)) / 2
@@ -350,8 +318,8 @@ func (m model) browserColumns() []string {
 
 	remoteHead := m.sectionLabel(focusFiles, "remote") + dimStyle.Render(" "+m.cwd) + searchSuffix(m.searchActive, m.searchInput.Value())
 	localHead := m.sectionLabel(focusLocal, "local") + dimStyle.Render(" "+m.localCwd) + searchSuffix(m.localSearchActive, m.localSearchInput.Value())
-	left := append([]string{remoteHead, ""}, m.listLines(rows)...)
-	right := append([]string{localHead, ""}, m.localListLines(rows)...)
+	left := append([]string{remoteHead, ""}, m.listLines(rows, common)...)
+	right := append([]string{localHead, ""}, m.localListLines(rows, common)...)
 
 	out := make([]string, len(left))
 	for i := range left {

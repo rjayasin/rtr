@@ -176,19 +176,32 @@ func (m model) handleEvent(id int, ev transfer.Event) (tea.Model, tea.Cmd) {
 	}
 }
 
-// cleanupTargets computes what to delete if a download is cancelled: the
-// top-level destination entries that did not already exist (so a pre-existing
-// local file is never destroyed), plus rsync's temp-file glob for each source.
-func cleanupTargets(dest string, sources []string) (remove, globs []string) {
+// computeCleanup builds the list of targets to delete if a transfer is
+// cancelled — the top-level destination entries that did not already exist (so a
+// pre-existing file is never destroyed) — plus rsync's temp-file glob for each
+// source. base extracts a source's final element, join builds a destination
+// path, and absent reports whether a target is confirmed not to exist yet; these
+// differ between the local (download) and remote-over-SFTP (upload) cases.
+func computeCleanup(dest string, sources []string, base func(string) string, join func(...string) string, absent func(string) bool) (remove, globs []string) {
 	for _, s := range sources {
-		base := path.Base(s)
-		target := filepath.Join(dest, base)
-		if _, err := os.Stat(target); errors.Is(err, os.ErrNotExist) {
+		b := base(s)
+		target := join(dest, b)
+		if absent(target) {
 			remove = append(remove, target)
 		}
-		globs = append(globs, filepath.Join(dest, "."+base+".??????"))
+		globs = append(globs, join(dest, "."+b+".??????"))
 	}
 	return remove, globs
+}
+
+// cleanupTargets computes what to delete if a download is cancelled. Sources are
+// remote paths landing in the local dest, so existence is checked on the local
+// filesystem.
+func cleanupTargets(dest string, sources []string) (remove, globs []string) {
+	return computeCleanup(dest, sources, path.Base, filepath.Join, func(p string) bool {
+		_, err := os.Stat(p)
+		return errors.Is(err, os.ErrNotExist)
+	})
 }
 
 // cleanupPartial removes the partial files left by a cancelled transfer.
@@ -211,15 +224,10 @@ func cleanupPartial(x *xfer) {
 // up front, while the session is known-good; a target whose Stat fails for any
 // reason other than "not found" is left alone, never queued for deletion.
 func remoteCleanupTargets(s *sshx.Session, dest string, sources []string) (remove, globs []string) {
-	for _, src := range sources {
-		base := filepath.Base(src) // the name as it lands on the remote
-		target := path.Join(dest, base)
-		if _, err := s.Stat(target); errors.Is(err, os.ErrNotExist) {
-			remove = append(remove, target)
-		}
-		globs = append(globs, path.Join(dest, "."+base+".??????"))
-	}
-	return remove, globs
+	return computeCleanup(dest, sources, filepath.Base, path.Join, func(p string) bool {
+		_, err := s.Stat(p)
+		return errors.Is(err, os.ErrNotExist)
+	})
 }
 
 // remoteCleanupCmd removes, in the background over SFTP, the partial files a

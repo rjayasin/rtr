@@ -50,21 +50,41 @@ func partitionCommon[T any](entries []T, name func(T) string, common map[string]
 // comparing reports whether comparison ordering/dimming is in effect.
 func (m model) comparing() bool { return m.compareMode && m.localActive }
 
+// frameCommon returns the set of names present in both panes when comparison
+// ordering is active, or nil otherwise. A render computes it once and threads it
+// through the helpers below, so the maps aren't rebuilt several times per frame.
+func (m model) frameCommon() map[string]bool {
+	if !m.comparing() {
+		return nil
+	}
+	return m.commonNames()
+}
+
 // displayedEntries is the remote listing as shown: filtered by search, and in
 // comparison mode reordered so files present in both panes sink to the bottom.
 func (m model) displayedEntries() []sshx.Entry {
+	return m.displayedEntriesWith(m.frameCommon())
+}
+
+// displayedEntriesWith is displayedEntries given a precomputed common-name set.
+func (m model) displayedEntriesWith(common map[string]bool) []sshx.Entry {
 	es := m.filteredEntries()
 	if m.comparing() {
-		es = partitionCommon(es, func(e sshx.Entry) string { return e.Name }, m.commonNames())
+		es = partitionCommon(es, func(e sshx.Entry) string { return e.Name }, common)
 	}
 	return es
 }
 
 // displayedLocalEntries is the local listing as shown (filter + comparison order).
 func (m model) displayedLocalEntries() []localEntry {
+	return m.displayedLocalEntriesWith(m.frameCommon())
+}
+
+// displayedLocalEntriesWith is displayedLocalEntries given a precomputed set.
+func (m model) displayedLocalEntriesWith(common map[string]bool) []localEntry {
 	es := m.filteredLocalEntries()
 	if m.comparing() {
-		es = partitionCommon(es, func(e localEntry) string { return e.name }, m.commonNames())
+		es = partitionCommon(es, func(e localEntry) string { return e.name }, common)
 	}
 	return es
 }
