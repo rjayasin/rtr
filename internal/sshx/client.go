@@ -88,10 +88,15 @@ func keyAuth(path string) (ssh.AuthMethod, error) {
 	return ssh.PublicKeys(signer), nil
 }
 
-func authMethods(b config.Bookmark) []ssh.AuthMethod {
-	var methods []ssh.AuthMethod
+// authMethods assembles the SSH auth methods for a bookmark. The returned
+// cleanup closes the ssh-agent socket connection (a no-op when no agent is
+// used); callers must invoke it once the handshake has completed, since the
+// agent is only consulted during authentication.
+func authMethods(b config.Bookmark) (methods []ssh.AuthMethod, cleanup func()) {
+	cleanup = func() {}
 	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
 		if conn, err := net.Dial("unix", sock); err == nil {
+			cleanup = func() { conn.Close() }
 			methods = append(methods, ssh.PublicKeysCallback(agent.NewClient(conn).Signers))
 		}
 	}
@@ -116,7 +121,7 @@ func authMethods(b config.Bookmark) []ssh.AuthMethod {
 	for _, name := range []string{"id_ed25519", "id_ecdsa", "id_rsa"} {
 		addKey(filepath.Join(homeDir(), ".ssh", name))
 	}
-	return methods
+	return methods, cleanup
 }
 
 // hostKeyConfig builds the host-key verification callback and the list of host
@@ -165,23 +170,27 @@ func appendKnownHost(path, hostname string, remote net.Addr, key ssh.PublicKey) 
 	return knownhosts.WriteKnownHost(f, hostname, remote, key)
 }
 
-func clientConfig(b config.Bookmark) (*ssh.ClientConfig, error) {
+// clientConfig builds the SSH client config. The returned cleanup releases the
+// ssh-agent connection backing the auth methods and must be called once the
+// handshake using this config has finished.
+func clientConfig(b config.Bookmark) (*ssh.ClientConfig, func(), error) {
 	addr := net.JoinHostPort(b.Host, strconv.Itoa(b.EffectivePort()))
 	cb, hostKeyAlgos, err := hostKeyConfig(filepath.Join(homeDir(), ".ssh", "known_hosts"), addr)
 	if err != nil {
-		return nil, err
+		return nil, func() {}, err
 	}
 	user := b.User
 	if user == "" {
 		user = os.Getenv("USER")
 	}
+	methods, cleanup := authMethods(b)
 	return &ssh.ClientConfig{
 		User:              user,
-		Auth:              authMethods(b),
+		Auth:              methods,
 		HostKeyCallback:   cb,
 		HostKeyAlgorithms: hostKeyAlgos,
 		Timeout:           dialTimeout,
-	}, nil
+	}, cleanup, nil
 }
 
 // Dial opens an SSH connection for the bookmark, transparently routing through a
@@ -191,10 +200,13 @@ func Dial(b config.Bookmark) (*ssh.Client, error) {
 	if b.Host == "" {
 		return nil, errors.New("bookmark has no host")
 	}
-	cfg, err := clientConfig(b)
+	cfg, cleanup, err := clientConfig(b)
 	if err != nil {
 		return nil, err
 	}
+	// The agent is only needed during the handshake, which ssh.Dial /
+	// NewClientConn complete before this function returns; release it after.
+	defer cleanup()
 	addr := net.JoinHostPort(b.Host, strconv.Itoa(b.EffectivePort()))
 
 	if b.JumpHost == "" {
@@ -202,10 +214,11 @@ func Dial(b config.Bookmark) (*ssh.Client, error) {
 	}
 
 	jb := parseJump(b.JumpHost)
-	jcfg, err := clientConfig(jb)
+	jcfg, jcleanup, err := clientConfig(jb)
 	if err != nil {
 		return nil, err
 	}
+	defer jcleanup()
 	jclient, err := ssh.Dial("tcp", net.JoinHostPort(jb.Host, strconv.Itoa(jb.EffectivePort())), jcfg)
 	if err != nil {
 		return nil, fmt.Errorf("jump host %s: %w", b.JumpHost, err)

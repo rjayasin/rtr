@@ -268,9 +268,7 @@ func sizeCmd(id int, s *sshx.Session, sources []string) tea.Cmd {
 	return func() tea.Msg {
 		var total int64
 		for _, src := range srcs {
-			if n, err := s.PathSize(src); err == nil {
-				total += n
-			}
+			total += s.PathSize(src)
 		}
 		return sizeMsg{id: id, size: total}
 	}
