@@ -6,6 +6,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -40,28 +41,55 @@ func (s sortMode) String() string {
 	}
 }
 
-// sortEntries orders entries in place by the chosen key, with directories and
-// files interspersed (name is the tie-break for the time modes).
-func sortEntries(entries []sshx.Entry, mode sortMode) {
+// sortByMode orders entries in place by the chosen key, with directories and
+// files interspersed (name is the tie-break for the time modes). name and mod
+// extract the sort keys, letting the remote and local panes share one impl.
+func sortByMode[T any](entries []T, mode sortMode, name func(T) string, mod func(T) time.Time) {
 	sort.SliceStable(entries, func(i, j int) bool {
 		a, b := entries[i], entries[j]
+		na, nb := strings.ToLower(name(a)), strings.ToLower(name(b))
 		switch mode {
 		case sortTimeDesc:
-			if !a.ModTime.Equal(b.ModTime) {
-				return a.ModTime.After(b.ModTime) // newest first
+			if !mod(a).Equal(mod(b)) {
+				return mod(a).After(mod(b)) // newest first
 			}
-			return strings.ToLower(a.Name) < strings.ToLower(b.Name)
+			return na < nb
 		case sortTimeAsc:
-			if !a.ModTime.Equal(b.ModTime) {
-				return a.ModTime.Before(b.ModTime) // oldest first
+			if !mod(a).Equal(mod(b)) {
+				return mod(a).Before(mod(b)) // oldest first
 			}
-			return strings.ToLower(a.Name) < strings.ToLower(b.Name)
+			return na < nb
 		case sortNameDesc:
-			return strings.ToLower(a.Name) > strings.ToLower(b.Name)
+			return na > nb
 		default: // sortNameAsc
-			return strings.ToLower(a.Name) < strings.ToLower(b.Name)
+			return na < nb
 		}
 	})
+}
+
+// sortEntries orders a remote listing in place by the chosen key.
+func sortEntries(entries []sshx.Entry, mode sortMode) {
+	sortByMode(entries, mode,
+		func(e sshx.Entry) string { return e.Name },
+		func(e sshx.Entry) time.Time { return e.ModTime })
+}
+
+// filterByName drops dot files (unless showHidden) and narrows to a
+// case-insensitive substring query, shared by both panes.
+func filterByName[T any](entries []T, name func(T) string, showHidden bool, query string) []T {
+	q := strings.ToLower(strings.TrimSpace(query))
+	out := make([]T, 0, len(entries))
+	for _, e := range entries {
+		n := name(e)
+		if !showHidden && strings.HasPrefix(n, ".") {
+			continue
+		}
+		if q != "" && !strings.Contains(strings.ToLower(n), q) {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
 }
 
 // focusArea selects which pane the arrow keys scroll.
@@ -388,18 +416,7 @@ func (m *model) clearSearch() {
 // showHidden is on, and the remainder is narrowed to the current search query
 // (case-insensitive substring on the name).
 func (m model) filteredEntries() []sshx.Entry {
-	q := strings.ToLower(strings.TrimSpace(m.searchInput.Value()))
-	out := make([]sshx.Entry, 0, len(m.entries))
-	for _, e := range m.entries {
-		if !m.showHidden && strings.HasPrefix(e.Name, ".") {
-			continue
-		}
-		if q != "" && !strings.Contains(strings.ToLower(e.Name), q) {
-			continue
-		}
-		out = append(out, e)
-	}
-	return out
+	return filterByName(m.entries, func(e sshx.Entry) string { return e.Name }, m.showHidden, m.searchInput.Value())
 }
 
 // transferLabel names a queued download for the panel.
@@ -499,12 +516,8 @@ func (m model) visibleRows() int {
 
 // listLines renders exactly rows lines of the directory listing (padded with
 // blanks), so the status/panel/footer stay pinned to the bottom of the window.
-func (m model) listLines(rows int) []string {
-	entries := m.displayedEntries()
-	var common map[string]bool
-	if m.comparing() {
-		common = m.commonNames()
-	}
+func (m model) listLines(rows int, common map[string]bool) []string {
+	entries := m.displayedEntriesWith(common)
 	out := make([]string, 0, rows)
 	if len(entries) == 0 {
 		if m.searchInput.Value() != "" {
@@ -554,12 +567,16 @@ func (m model) viewBrowser() string {
 
 	var lines []string
 
+	// Compute the comparison common-name set once per frame and thread it through
+	// the listing helpers, rather than rebuilding it in each of them.
+	common := m.frameCommon()
+
 	var body []string
 	if m.localActive {
-		body = m.browserColumns()
+		body = m.browserColumns(common)
 	} else {
 		breadcrumb := m.sectionLabel(focusFiles, "remote") + dimStyle.Render(" "+m.cwd) + searchSuffix(m.searchActive, m.searchInput.Value())
-		body = append([]string{breadcrumb, ""}, m.listLines(m.visibleRows())...)
+		body = append([]string{breadcrumb, ""}, m.listLines(m.visibleRows(), common)...)
 	}
 	if m.destActive {
 		body = overlayCenter(body, m.destPopover(), max(m.width, 1))
@@ -632,13 +649,13 @@ func (m model) footer(baseHelp string) string {
 	}
 	switch {
 	case m.localActive && len(m.transfers) > 0:
-		return baseHelp + m.compareHint() + " • tab panes"
+		return baseHelp + m.compareHint() + " • tab panes • q quit"
 	case m.localActive:
-		return baseHelp + m.compareHint() + " • tab local"
+		return baseHelp + m.compareHint() + " • tab local • q quit"
 	case len(m.transfers) > 0:
-		return baseHelp + " • tab transfers"
+		return baseHelp + " • tab transfers • q quit"
 	}
-	return baseHelp
+	return baseHelp + " • q quit"
 }
 
 // compareHint shows the ~ comparison toggle and its state, only while the local
