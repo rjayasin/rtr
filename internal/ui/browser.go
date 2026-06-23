@@ -12,6 +12,7 @@ import (
 
 	"github.com/rjayasin/rtr/internal/sshx"
 	"github.com/rjayasin/rtr/internal/transfer"
+	"github.com/rjayasin/rtr/internal/util"
 )
 
 // sortMode is the remote listing order. `t` cycles the time modes and `n`
@@ -260,7 +261,7 @@ func (m model) updateDestPopover(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.destUpload {
 			return m.startUpload()
 		}
-		dest := expandHomeUI(strings.TrimSpace(m.destInput.Value()))
+		dest := util.ExpandHome(strings.TrimSpace(m.destInput.Value()))
 		if dest == "" {
 			m.err = fmt.Errorf("destination is required")
 			return m, nil
@@ -658,17 +659,4 @@ func (m model) hiddenHint() string {
 		return " • . hidden:on"
 	}
 	return " • . hidden"
-}
-
-func humanSize(n int64) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%dB", n)
-	}
-	div, exp := int64(unit), 0
-	for x := n / unit; x >= unit; x /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f%c", float64(n)/float64(div), "KMGTPE"[exp])
 }
