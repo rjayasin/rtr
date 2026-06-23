@@ -16,6 +16,7 @@ import (
 
 	"github.com/kevinburke/ssh_config"
 	"github.com/rjayasin/rtr/internal/config"
+	"github.com/rjayasin/rtr/internal/util"
 	"github.com/skeema/knownhosts"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -26,13 +27,6 @@ const dialTimeout = 20 * time.Second
 func homeDir() string {
 	h, _ := os.UserHomeDir()
 	return h
-}
-
-func expandHome(p string) string {
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		return homeDir() + p[1:]
-	}
-	return p
 }
 
 // resolveAlias fills empty bookmark fields from a matching ~/.ssh/config Host.
@@ -76,7 +70,7 @@ func resolveAlias(b config.Bookmark) config.Bookmark {
 }
 
 func keyAuth(path string) (ssh.AuthMethod, error) {
-	data, err := os.ReadFile(expandHome(path))
+	data, err := os.ReadFile(util.ExpandHome(path))
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +96,7 @@ func authMethods(b config.Bookmark) (methods []ssh.AuthMethod, cleanup func()) {
 	}
 	seen := map[string]bool{}
 	addKey := func(path string) {
-		p := expandHome(path)
+		p := util.ExpandHome(path)
 		if p == "" || seen[p] {
 			return
 		}
