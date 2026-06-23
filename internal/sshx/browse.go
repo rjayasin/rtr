@@ -3,7 +3,6 @@ package sshx
 import (
 	"io/fs"
 	"path"
-	"sort"
 	"time"
 
 	"github.com/pkg/sftp"
@@ -54,8 +53,9 @@ func (s *Session) Home() string {
 	return "/"
 }
 
-// List returns the contents of dir, directories first then files, each sorted
-// case-insensitively by name.
+// List returns the contents of dir. The order is left unsorted: every caller
+// re-sorts by the user's chosen mode (see ui.sortEntries), so sorting here would
+// be wasted work.
 func (s *Session) List(dir string) ([]Entry, error) {
 	infos, err := s.sftp.ReadDir(dir)
 	if err != nil {
@@ -79,19 +79,13 @@ func (s *Session) List(dir string) ([]Entry, error) {
 			ModTime: fi.ModTime(),
 		})
 	}
-	sort.SliceStable(entries, func(i, j int) bool {
-		if entries[i].IsDir != entries[j].IsDir {
-			return entries[i].IsDir
-		}
-		return lessFold(entries[i].Name, entries[j].Name)
-	})
 	return entries, nil
 }
 
 // PathSize returns the total size in bytes of a remote path: the file size for
 // a regular file, or the summed size of every file beneath it for a directory.
 // Unreadable entries are skipped rather than failing the whole walk.
-func (s *Session) PathSize(root string) (int64, error) {
+func (s *Session) PathSize(root string) int64 {
 	var total int64
 	w := s.sftp.Walk(root)
 	for w.Step() {
@@ -102,7 +96,7 @@ func (s *Session) PathSize(root string) (int64, error) {
 			total += fi.Size()
 		}
 	}
-	return total, nil
+	return total
 }
 
 // MkdirAll creates a remote directory and any missing parents (a no-op if it
@@ -139,22 +133,4 @@ func (s *Session) Close() error {
 		return s.client.Close()
 	}
 	return nil
-}
-
-func lessFold(a, b string) bool {
-	la, lb := toLower(a), toLower(b)
-	if la == lb {
-		return a < b
-	}
-	return la < lb
-}
-
-func toLower(s string) string {
-	bs := []byte(s)
-	for i, c := range bs {
-		if c >= 'A' && c <= 'Z' {
-			bs[i] = c + ('a' - 'A')
-		}
-	}
-	return string(bs)
 }
