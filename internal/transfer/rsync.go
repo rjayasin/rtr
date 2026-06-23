@@ -7,13 +7,13 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/rjayasin/rtr/internal/config"
+	"github.com/rjayasin/rtr/internal/util"
 )
 
 // Job describes one rsync transfer between this machine and the bookmark's host.
@@ -38,7 +38,7 @@ func sshTransport(b config.Bookmark) string {
 		parts = append(parts, "-p", fmt.Sprintf("%d", p))
 	}
 	if b.Identity != "" {
-		parts = append(parts, "-i", expandHome(b.Identity))
+		parts = append(parts, "-i", util.ExpandHome(b.Identity))
 	}
 	if b.JumpHost != "" {
 		parts = append(parts, "-J", b.JumpHost)
@@ -82,15 +82,6 @@ func BuildArgs(j Job) []string {
 	}
 	args = append(args, j.LocalDest)
 	return args
-}
-
-func expandHome(p string) string {
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			return home + p[1:]
-		}
-	}
-	return p
 }
 
 // Event is one update emitted while rsync runs. Exactly one field group is set:

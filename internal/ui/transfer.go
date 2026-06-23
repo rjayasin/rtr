@@ -16,6 +16,7 @@ import (
 	"github.com/rjayasin/rtr/internal/config"
 	"github.com/rjayasin/rtr/internal/sshx"
 	"github.com/rjayasin/rtr/internal/transfer"
+	"github.com/rjayasin/rtr/internal/util"
 )
 
 // xfer is the live state of one background transfer, shown in the bottom panel.
@@ -404,7 +405,7 @@ func (m model) destPopover() string {
 	if m.sizeLoading {
 		title += m.spinner.View() + dimStyle.Render(" calculating…")
 	} else {
-		title += dimStyle.Render(humanSize(m.pendingSize))
+		title += dimStyle.Render(util.HumanBytes(m.pendingSize))
 	}
 
 	// List every selected file by name (not its full path), one per line, so the
@@ -491,15 +492,6 @@ func countLabel(n int) string {
 		return "1 item"
 	}
 	return fmt.Sprintf("%d items", n)
-}
-
-func expandHomeUI(p string) string {
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			return home + p[1:]
-		}
-	}
-	return p
 }
 
 func truncate(s string, w int) string {

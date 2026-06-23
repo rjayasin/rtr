@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	su "github.com/creativeprojects/go-selfupdate"
+
+	"github.com/rjayasin/rtr/internal/util"
 )
 
 // Slug is the GitHub owner/repo that release archives are fetched from.
@@ -71,26 +73,12 @@ func Apply(ctx context.Context, current string, status func(string)) (version st
 	if err != nil {
 		return "", false, err
 	}
-	report("latest is %s; downloading %s (%s)…", rel.Version(), rel.AssetName, humanBytes(rel.AssetByteSize))
+	report("latest is %s; downloading %s (%s)…", rel.Version(), rel.AssetName, util.HumanBytes(int64(rel.AssetByteSize)))
 	report("verifying checksum and replacing %s…", exe)
 	if err := up.UpdateTo(ctx, rel, exe); err != nil {
 		return "", false, err
 	}
 	return rel.Version(), true, nil
-}
-
-// humanBytes formats a byte count for download progress messages.
-func humanBytes(n int) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-	div, exp := int64(unit), 0
-	for x := int64(n) / unit; x >= unit; x /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
 // isReleaseVersion reports whether s looks like a real release version (vX.Y...),

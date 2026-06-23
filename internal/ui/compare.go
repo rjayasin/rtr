@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/rjayasin/rtr/internal/sshx"
+	"github.com/rjayasin/rtr/internal/util"
 )
 
 // commonNames returns the set of entry names present in BOTH the remote and the
@@ -93,7 +94,7 @@ func sizeCell(isDir, common bool, size int64, cursor bool) string {
 	if isDir {
 		return fmt.Sprintf("%8s", "")
 	}
-	s := fmt.Sprintf("%8s", humanSize(size))
+	s := fmt.Sprintf("%8s", util.HumanBytes(size))
 	switch {
 	case cursor:
 		return cursorFileStyle.Render(s) // size only shows for files
