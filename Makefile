@@ -16,10 +16,10 @@ run: build
 build:
 	$(GO) build -ldflags "$(LDFLAGS)" -o $(BINARY) .
 
-## test: run the test suite
+## test: run the test suite (with the race detector, matching CI)
 .PHONY: test
 test:
-	$(GO) test ./...
+	$(GO) test -race ./...
 
 ## vet: run go vet
 .PHONY: vet
