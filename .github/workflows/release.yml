@@ -1,8 +1,13 @@
 name: Release
 
-# Every push to main cuts a new release: the next minor version is computed
-# from the latest tag (no commit-message conventions needed), tagged, and built
-# by goreleaser in the same job.
+# Every push to main cuts a new release. The bump severity (major/minor/patch)
+# is inferred from the Conventional Commit messages since the latest tag:
+#   feat:            -> minor
+#   fix:             -> patch
+#   feat!/fix!/      -> major
+#   BREAKING CHANGE:
+# Commits with no recognized type fall back to a patch bump, so a push always
+# produces a release. The tag is then built by goreleaser in the same job.
 on:
   push:
     branches: [main]
@@ -36,12 +41,17 @@ jobs:
           cache: true
 
       # svu (from goreleaser's author) computes the next version from the latest
-      # tag. The `minor` subcommand always bumps the minor, ignoring commit
-      # messages, so no feat/fix conventions are needed.
-      - name: Tag next minor version
+      # tag. `svu next` reads the Conventional Commit messages since that tag to
+      # decide major vs minor vs patch. If nothing since the last tag warrants a
+      # bump (no feat/fix/breaking commits), svu returns the current version
+      # unchanged; in that case we force a patch so every push still ships.
+      - name: Tag next version
         run: |
           go install github.com/caarlos0/svu/v3@latest
-          next=$(svu minor)
+          next=$(svu next)
+          if [ "$next" = "$(svu current)" ]; then
+            next=$(svu patch)
+          fi
           git tag "$next"
           git push origin "$next"
 
