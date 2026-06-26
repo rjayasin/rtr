@@ -123,6 +123,14 @@ make vet      # run go vet
 make fmt      # format all Go sources
 ```
 
+### Releases
+
+Pushing to `main` automatically cuts a release. The version bump is inferred
+from [Conventional Commit](https://www.conventionalcommits.org) messages since
+the last tag: `feat:` bumps the minor, `fix:` bumps the patch, and a `!` after
+the type (e.g. `feat!:`) or a `BREAKING CHANGE:` footer bumps the major.
+Commits without a recognized type still ship as a patch release.
+
 ## Why does this project exist
 I wanted the ease of navigation you get from an SFTP browser with the speed of rsync. 
 
