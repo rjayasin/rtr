@@ -50,5 +50,23 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # govulncheck has no built-in suppression, so findings are diffed against
+      # the reviewed allowlist in .govulncheck-ignore; anything new fails CI.
       - name: govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        run: |
+          code=0
+          go run golang.org/x/vuln/cmd/govulncheck@latest -format json ./... > vuln.json || code=$?
+          if [ "$code" -ne 0 ] && [ "$code" -ne 3 ]; then
+            cat vuln.json
+            exit "$code"
+          fi
+          found=$(jq -r 'select(.finding != null and .finding.trace[0].function != null) | .finding.osv' vuln.json | sort -u)
+          ignored=$(grep -oE '^GO-[0-9]+-[0-9]+' .govulncheck-ignore | sort -u)
+          new=$(comm -23 <(printf '%s\n' "$found" | sed '/^$/d') <(printf '%s\n' "$ignored"))
+          if [ -n "$new" ]; then
+            echo "Vulnerabilities not covered by .govulncheck-ignore:"
+            printf '%s\n' "$new"
+            go run golang.org/x/vuln/cmd/govulncheck@latest ./... || true
+            exit 1
+          fi
+          echo "govulncheck: no findings outside .govulncheck-ignore"
