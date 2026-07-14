@@ -1,8 +1,0 @@
-# Vulnerabilities reviewed and accepted; one OSV id per line (comments allowed).
-# CI fails on any govulncheck finding whose id is not listed here.
-#
-# GO-2026-5932: golang.org/x/crypto/openpgp is unmaintained and has no fixed
-# version. It is linked in via creativeprojects/go-selfupdate's PGP validator,
-# which rtr never uses — release downloads are verified with goreleaser's
-# checksums.txt (see internal/update). Only init functions are reachable.
-GO-2026-5932
