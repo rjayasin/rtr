@@ -90,7 +90,9 @@ func (m model) viewBookmarks() string {
 	if panel := m.transfersView(); panel != "" {
 		fmt.Fprintf(&b, "%s\n%s\n", dividerLine(m.width), panel)
 	}
-	fmt.Fprintf(&b, "\n%s", helpStyle.Render(m.footer(helpBookmarks)))
+	if m.showHelp {
+		fmt.Fprintf(&b, "\n%s", helpStyle.Render(m.footer(helpBookmarks)))
+	}
 	return b.String()
 }
 

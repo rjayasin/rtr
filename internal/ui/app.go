@@ -75,6 +75,10 @@ type model struct {
 	// showHidden toggles dot-file visibility in both panes (`.`); hidden by default.
 	showHidden bool
 
+	// showHelp toggles the keyboard-tips footer (`?`); shown by default. Hiding
+	// it gives the listing the row the footer occupied.
+	showHelp bool
+
 	// local file pane (toggled with `l`): a read-only view of the local
 	// directory rtr was launched from, shown split to the right of the remote list
 	localActive       bool
@@ -155,6 +159,7 @@ func New(cfg *config.Config, version string) model {
 		searchInput:      si,
 		localSearchInput: lsi,
 		progress:         progress.New(progress.WithDefaultGradient()),
+		showHelp:         true,
 		startDir:         wd,
 		transfersPath:    config.TransfersPath(cfg.Path()),
 		xferLogDir:       config.TransferLogDir(cfg.Path()),
@@ -554,7 +559,7 @@ func (m model) handleGlobalKey(key tea.KeyMsg) (model, tea.Cmd, bool) {
 
 	if m.confirmDisconnect {
 		switch ks {
-		case "left", "right", "tab":
+		case "left", "right", "tab", "shift+tab":
 			m.disconnectChoice ^= 1 // toggle between Yes (0) and No (1)
 			return m, nil, true
 		case "enter":
@@ -585,6 +590,11 @@ func (m model) handleGlobalKey(key tea.KeyMsg) (model, tea.Cmd, bool) {
 		return m, nil, false
 	}
 
+	if ks == "?" {
+		m.showHelp = !m.showHelp
+		return m, nil, true
+	}
+
 	if ks == "l" && m.screen == screenBrowser {
 		return m.toggleLocal(), nil, true
 	}
@@ -597,9 +607,13 @@ func (m model) handleGlobalKey(key tea.KeyMsg) (model, tea.Cmd, bool) {
 		return m, nil, true
 	}
 
-	if ks == "tab" {
+	if ks == "tab" || ks == "shift+tab" {
 		if cycle := m.focusCycle(); len(cycle) > 1 {
-			m.focus = nextInCycle(cycle, m.focus)
+			delta := 1
+			if ks == "shift+tab" {
+				delta = -1
+			}
+			m.focus = stepInCycle(cycle, m.focus, delta)
 			if m.focus == focusTransfers {
 				m.clampXferCursor()
 			}
@@ -613,9 +627,9 @@ func (m model) handleGlobalKey(key tea.KeyMsg) (model, tea.Cmd, bool) {
 	return m, nil, false
 }
 
-// focusCycle is the ordered set of panes tab rotates through, given what is
-// currently visible: the remote list, the local pane (when open), and the
-// transfers panel (when any transfers exist).
+// focusCycle is the ordered set of panes tab (and shift+tab, in reverse)
+// rotates through, given what is currently visible: the remote list, the local
+// pane (when open), and the transfers panel (when any transfers exist).
 func (m model) focusCycle() []focusArea {
 	cycle := []focusArea{focusFiles}
 	if m.screen == screenBrowser && m.localActive {
@@ -627,10 +641,11 @@ func (m model) focusCycle() []focusArea {
 	return cycle
 }
 
-func nextInCycle(cycle []focusArea, cur focusArea) focusArea {
+// stepInCycle returns the pane delta steps (+1 forward, -1 backward) from cur.
+func stepInCycle(cycle []focusArea, cur focusArea, delta int) focusArea {
 	for i, f := range cycle {
 		if f == cur {
-			return cycle[(i+1)%len(cycle)]
+			return cycle[(i+delta+len(cycle))%len(cycle)]
 		}
 	}
 	return cycle[0]

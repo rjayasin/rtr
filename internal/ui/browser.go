@@ -508,9 +508,13 @@ func (m *model) clampScroll() {
 }
 
 func (m model) visibleRows() int {
-	// chrome: breadcrumb + blank + status + footer = 4 lines (the title shares the
-	// footer row). When there are transfers, add the divider plus the panel.
-	chrome := 4
+	// chrome: breadcrumb + blank + status = 3 lines, plus the shortcut footer
+	// when it is visible (`?` toggles it). When there are transfers, add the
+	// divider plus the panel.
+	chrome := 3
+	if m.showHelp {
+		chrome++
+	}
 	if len(m.transfers) > 0 {
 		chrome += 1 + m.transfersHeight() // divider + panel
 	}
@@ -620,14 +624,16 @@ func (m model) viewBrowser() string {
 	} else if m.localSearchActive {
 		lines = append(lines, m.localSearchInput.View())
 	}
-	browserHelp := fmt.Sprintf(
-		"↑/↓ move • → open • ← up • x/space select • / search • l local • enter download • t/n sort:%s%s • a all • c clear • r refresh • esc back",
-		m.sortMode, m.hiddenHint())
-	help := m.footer(browserHelp)
-	if m.searchActive || m.localSearchActive {
-		help = "type to filter • enter accept • esc clear"
+	if m.showHelp {
+		browserHelp := fmt.Sprintf(
+			"↑/↓ move • → open • ← up • x/space select • / search • l local • enter download • t/n sort:%s%s • a all • c clear • r refresh • esc back",
+			m.sortMode, m.hiddenHint())
+		help := m.footer(browserHelp)
+		if m.searchActive || m.localSearchActive {
+			help = "type to filter • enter accept • esc clear"
+		}
+		lines = append(lines, helpStyle.Render(help))
 	}
-	lines = append(lines, helpStyle.Render(help))
 	return strings.Join(lines, "\n")
 }
 

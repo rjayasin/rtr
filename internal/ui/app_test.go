@@ -1170,3 +1170,118 @@ func TestPopoverEnterQueuesTransfer(t *testing.T) {
 		t.Error("expected a start command")
 	}
 }
+
+// A completed transfer's row shows, after the destination path, the total
+// size, elapsed time, and average speed.
+func TestDoneRowShowsStats(t *testing.T) {
+	m := testModel()
+	start := time.Now().Add(-10 * time.Second)
+	m.transfers = []*xfer{{
+		id: 0, label: "big.iso", dest: "/tmp/dl",
+		done: true, pct: 100,
+		bytes: 10 << 20, startedAt: start, finishedAt: start.Add(10 * time.Second),
+	}}
+
+	view := ansi.Strip(m.transfersView())
+	for _, want := range []string{"→ /tmp/dl", "10.0M", "in 10s", "1.0M/s avg"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("done row missing %q:\n%s", want, view)
+		}
+	}
+
+	// With no progress sample ever seen, the stats are omitted entirely.
+	m.transfers[0].bytes = 0
+	view = ansi.Strip(m.transfersView())
+	if strings.Contains(view, "avg") || strings.Contains(view, " in ") {
+		t.Errorf("stats should be omitted without a byte count:\n%s", view)
+	}
+}
+
+// Progress events record the numeric byte count and Done stamps the finish
+// time, so the completed row can report size/time/speed.
+func TestHandleEventRecordsStats(t *testing.T) {
+	m := testModel()
+	m.transfers = []*xfer{{id: 3, label: "f", startedAt: time.Now().Add(-time.Minute)}}
+
+	p := transfer.Progress{Percent: 100, Bytes: 2048, BytesRaw: "2,048"}
+	updated, _ := m.handleEvent(3, transfer.Event{Progress: &p})
+	m = updated.(model)
+	if x := m.findXfer(3); x.bytes != 2048 {
+		t.Fatalf("bytes = %d, want 2048", x.bytes)
+	}
+
+	updated, _ = m.handleEvent(3, transfer.Event{Done: true})
+	m = updated.(model)
+	x := m.findXfer(3)
+	if x.finishedAt.IsZero() {
+		t.Error("finishedAt should be stamped on Done")
+	}
+	if x.doneStats() == "" {
+		t.Error("doneStats should be non-empty after a measured transfer")
+	}
+}
+
+// `?` toggles the keyboard-tips footer on any non-text screen; hiding it gives
+// the listing the footer's row back.
+func TestHelpToggle(t *testing.T) {
+	m := testModel()
+	m.screen = screenBrowser
+	m.cwd = "/volume1"
+
+	if !m.showHelp {
+		t.Fatal("help should start visible")
+	}
+	rowsWithHelp := m.visibleRows()
+	if !strings.Contains(ansi.Strip(m.viewBrowser()), "q quit") {
+		t.Error("footer should render while help is on")
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m = updated.(model)
+	if m.showHelp {
+		t.Fatal("? should hide the help footer")
+	}
+	if strings.Contains(ansi.Strip(m.viewBrowser()), "q quit") {
+		t.Error("footer should not render while help is off")
+	}
+	if got := m.visibleRows(); got != rowsWithHelp+1 {
+		t.Errorf("visibleRows = %d, want %d (footer row reclaimed)", got, rowsWithHelp+1)
+	}
+	if strings.Contains(ansi.Strip(m.viewBookmarks()), "enter connect") {
+		t.Error("bookmarks footer should honor the toggle too")
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m = updated.(model)
+	if !m.showHelp {
+		t.Error("second ? should show the help footer again")
+	}
+}
+
+// shift+tab cycles pane focus in the reverse order of tab.
+func TestShiftTabCyclesBackwards(t *testing.T) {
+	m := testModel()
+	m.screen = screenBrowser
+	m.localActive = true
+	m.transfers = []*xfer{{id: 0, label: "f"}}
+	m.focus = focusFiles
+
+	back := func() {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+		m = updated.(model)
+	}
+
+	// Backwards from files wraps to the transfers panel, then local, then files.
+	back()
+	if m.focus != focusTransfers {
+		t.Fatalf("focus = %v, want transfers", m.focus)
+	}
+	back()
+	if m.focus != focusLocal {
+		t.Fatalf("focus = %v, want local", m.focus)
+	}
+	back()
+	if m.focus != focusFiles {
+		t.Fatalf("focus = %v, want files", m.focus)
+	}
+}

@@ -24,26 +24,27 @@ import (
 // The rsync process is detached (it survives rtr quitting), so alongside the
 // live handle it carries the identity persisted for re-attach on relaunch.
 type xfer struct {
-	id        int
-	key       string          // persistent ID; stable across restarts, names the log file
-	label     string          // file name, or "N items"
-	dest      string          // local dir for a download, remote dir for an upload
-	upload    bool            // direction: false = download (remote→local), true = upload
-	bookmark  config.Bookmark // for persistence / auto-resume
-	sources   []string        // source paths (remote for download, local for upload)
-	pid       int             // detached rsync pid, once started (journaled for re-attach)
-	logPath   string          // rsync output log, tailed for progress
-	startedAt time.Time
-	pct       float64
-	rate      string
-	eta       string
-	bytes     string
-	last      string // last raw output line, used for error context
-	done      bool
-	cancelled bool // user-cancelled (shown distinctly from a real error)
-	respawned bool // one-shot guard: a re-attached process that died was respawned
-	err       error
-	handle    *transfer.Handle
+	id         int
+	key        string          // persistent ID; stable across restarts, names the log file
+	label      string          // file name, or "N items"
+	dest       string          // local dir for a download, remote dir for an upload
+	upload     bool            // direction: false = download (remote→local), true = upload
+	bookmark   config.Bookmark // for persistence / auto-resume
+	sources    []string        // source paths (remote for download, local for upload)
+	pid        int             // detached rsync pid, once started (journaled for re-attach)
+	logPath    string          // rsync output log, tailed for progress
+	startedAt  time.Time
+	finishedAt time.Time // set when the transfer ends; drives the completed-line stats
+	pct        float64
+	rate       string
+	eta        string
+	bytes      int64  // total bytes transferred, from the latest progress sample
+	last       string // last raw output line, used for error context
+	done       bool
+	cancelled  bool // user-cancelled (shown distinctly from a real error)
+	respawned  bool // one-shot guard: a re-attached process that died was respawned
+	err        error
+	handle     *transfer.Handle
 
 	// partial-file cleanup, applied only when the user cancels: top-level
 	// destination entries this job newly created, plus rsync temp-file globs.
@@ -170,6 +171,7 @@ func (m model) handleEvent(id int, ev transfer.Event) (tea.Model, tea.Cmd) {
 			return m, startCmd(x.id, x.job(m.cfg.Rsync), x.logPath)
 		}
 		x.done = true
+		x.finishedAt = time.Now()
 		x.err = ev.Err
 		if ev.Err == nil {
 			x.pct = 100
@@ -207,7 +209,7 @@ func (m model) handleEvent(id int, ev transfer.Event) (tea.Model, tea.Cmd) {
 		x.pct = ev.Progress.Percent
 		x.rate = ev.Progress.Rate
 		x.eta = ev.Progress.ETA
-		x.bytes = ev.Progress.BytesRaw
+		x.bytes = ev.Progress.Bytes
 		return m, rearmCmd(id, x)
 	default:
 		if ev.Line != "" {
@@ -377,7 +379,7 @@ func (m model) transfersView() string {
 			}
 			right = errStyle.Render("✗") + " " + dimStyle.Render(truncate(detail, 44))
 		case x.done:
-			right = okStyle.Render("✓") + " " + dimStyle.Render("→ "+x.dest)
+			right = okStyle.Render("✓") + " " + dimStyle.Render("→ "+x.dest+x.doneStats())
 		default:
 			// The bar renders its own percentage; only append rate/ETA.
 			var parts []string
@@ -543,6 +545,29 @@ func overlayLine(bg, fg string, x, fgW int) string {
 	}
 	rightPart := ansi.TruncateLeft(bg, x+fgW, "")
 	return leftPart + ansiReset + fg + ansiReset + rightPart
+}
+
+// doneStats summarizes a completed transfer for its panel row: total size,
+// elapsed wall time, and average rate, e.g. " • 4.2M in 1m5s • 66.0K/s avg".
+// Empty when nothing was measured (no progress sample was ever seen).
+func (x *xfer) doneStats() string {
+	if x.bytes <= 0 || x.startedAt.IsZero() || x.finishedAt.Before(x.startedAt) {
+		return ""
+	}
+	elapsed := x.finishedAt.Sub(x.startedAt)
+	stats := fmt.Sprintf(" • %s in %s", util.HumanBytes(x.bytes), humanDuration(elapsed))
+	if secs := elapsed.Seconds(); secs > 0 {
+		stats += fmt.Sprintf(" • %s/s avg", util.HumanBytes(int64(float64(x.bytes)/secs)))
+	}
+	return stats
+}
+
+// humanDuration renders an elapsed time compactly at whole-second granularity.
+func humanDuration(d time.Duration) string {
+	if d < time.Second {
+		return "<1s"
+	}
+	return d.Round(time.Second).String()
 }
 
 // ── small helpers ───────────────────────────────────────────────────
