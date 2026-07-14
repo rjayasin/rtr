@@ -93,6 +93,7 @@ type model struct {
 	transfers         []*xfer
 	nextXfer          int
 	transfersPath     string // resume file (transfers.json beside the config)
+	xferLogDir        string // per-transfer rsync log files (transfers/ beside the config)
 	confirmQuit       bool   // showing the "quit with downloads running?" prompt
 	confirmDisconnect bool   // showing the "disconnect from host?" prompt
 	disconnectChoice  int    // selected button in the disconnect prompt: 0=Yes, 1=No
@@ -156,25 +157,64 @@ func New(cfg *config.Config, version string) model {
 		progress:         progress.New(progress.WithDefaultGradient()),
 		startDir:         wd,
 		transfersPath:    config.TransfersPath(cfg.Path()),
+		xferLogDir:       config.TransferLogDir(cfg.Path()),
 		version:          version,
 	}
+	if m.xferLogDir == "" {
+		// In-memory config (tests): logs still need a real path for rsync to
+		// write to, but nothing beside the config file to put them in.
+		m.xferLogDir = filepath.Join(os.TempDir(), "rtr-transfers")
+	}
 
-	// Restore any transfers that were still running when rtr last exited; they
-	// are restarted (and resumed) by Init.
+	// Restore any transfers that were still running when rtr last exited; Init
+	// re-attaches to those whose detached rsync is still alive and restarts
+	// (resuming via --partial) the rest.
 	if pend, err := config.LoadPendingTransfers(m.transfersPath); err == nil {
 		for _, p := range pend {
+			key := p.ID
+			if key == "" {
+				key = newXferKey() // legacy journal entry from an older rtr
+			}
+			logPath := p.LogPath
+			if logPath == "" {
+				logPath = filepath.Join(m.xferLogDir, key+".log")
+			}
 			m.transfers = append(m.transfers, &xfer{
-				id:       m.nextXfer,
-				label:    transferLabel(p.Sources),
-				dest:     p.Dest,
-				upload:   p.Upload,
-				bookmark: p.Bookmark,
-				sources:  p.Sources,
+				id:        m.nextXfer,
+				key:       key,
+				label:     transferLabel(p.Sources),
+				dest:      p.Dest,
+				upload:    p.Upload,
+				bookmark:  p.Bookmark,
+				sources:   p.Sources,
+				pid:       p.PID,
+				logPath:   logPath,
+				startedAt: p.StartedAt,
 			})
 			m.nextXfer++
 		}
 	}
+	m.sweepOrphanLogs()
 	return m
+}
+
+// sweepOrphanLogs deletes log files in the transfer-log directory that no
+// journaled transfer references — leftovers from a crash or a journal write
+// that never happened.
+func (m model) sweepOrphanLogs() {
+	logs, err := filepath.Glob(filepath.Join(m.xferLogDir, "*.log"))
+	if err != nil {
+		return
+	}
+	inUse := map[string]bool{}
+	for _, x := range m.transfers {
+		inUse[x.logPath] = true
+	}
+	for _, l := range logs {
+		if !inUse[l] {
+			os.Remove(l)
+		}
+	}
 }
 
 // ── Messages ────────────────────────────────────────────────────────
@@ -192,8 +232,7 @@ type listedMsg struct {
 
 type startedMsg struct {
 	id     int
-	ch     <-chan transfer.Event
-	cancel context.CancelFunc
+	handle *transfer.Handle
 }
 
 type evMsg struct {
@@ -249,15 +288,32 @@ func listCmd(s *sshx.Session, dir string) tea.Cmd {
 	}
 }
 
-func startCmd(id int, job transfer.Job) tea.Cmd {
+// startCmd spawns a fresh detached rsync for the transfer, writing progress to
+// logPath. The process survives rtr exiting; --partial (in the default flags)
+// makes a restart resume where a previous attempt stopped.
+func startCmd(id int, job transfer.Job, logPath string) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithCancel(context.Background())
-		ch, err := transfer.Start(ctx, job)
+		h, err := transfer.StartDetached(job, logPath)
 		if err != nil {
-			cancel()
 			return evMsg{id: id, ev: transfer.Event{Done: true, Err: err}}
 		}
-		return startedMsg{id: id, ch: ch, cancel: cancel}
+		return startedMsg{id: id, handle: h}
+	}
+}
+
+// attachCmd re-attaches to a detached rsync left running by a previous rtr
+// run. If the attach fails (e.g. the log file is gone) it falls back to a
+// fresh spawn, which resumes via --partial.
+func attachCmd(id int, job transfer.Job, pid int, logPath string) tea.Cmd {
+	return func() tea.Msg {
+		if h, err := transfer.Attach(pid, logPath); err == nil {
+			return startedMsg{id: id, handle: h}
+		}
+		h, err := transfer.StartDetached(job, logPath)
+		if err != nil {
+			return evMsg{id: id, ev: transfer.Event{Done: true, Err: err}}
+		}
+		return startedMsg{id: id, handle: h}
 	}
 }
 
@@ -347,7 +403,11 @@ func waitEvCmd(id int, ch <-chan transfer.Event) tea.Cmd {
 func (m model) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.spinner.Tick, checkUpdateCmd(m.version)}
 	for _, x := range m.transfers { // resume transfers restored in New
-		cmds = append(cmds, startCmd(x.id, x.job(m.cfg.Rsync)))
+		if transfer.Alive(x.pid, m.cfg.Rsync.Binary) {
+			cmds = append(cmds, attachCmd(x.id, x.job(m.cfg.Rsync), x.pid, x.logPath))
+		} else {
+			cmds = append(cmds, startCmd(x.id, x.job(m.cfg.Rsync), x.logPath))
+		}
 	}
 	return tea.Batch(cmds...)
 }
@@ -422,11 +482,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case startedMsg:
 		if x := m.findXfer(msg.id); x != nil {
-			x.ch = msg.ch
-			x.cancel = msg.cancel
-			return m, waitEvCmd(msg.id, msg.ch)
+			x.handle = msg.handle
+			x.pid = msg.handle.PID
+			if x.startedAt.IsZero() {
+				x.startedAt = time.Now()
+			}
+			// Journal the pid right away so a quit (or crash) from this moment on
+			// can re-attach to the process on the next launch.
+			m.persistTransfers()
+			return m, waitEvCmd(msg.id, msg.handle.Events)
 		}
-		msg.cancel() // transfer was cleared before it started; stop the process
+		msg.handle.Kill() // transfer was cleared before it started; stop the process
 		return m, nil
 
 	case evMsg:
@@ -473,7 +539,8 @@ func (m model) handleGlobalKey(key tea.KeyMsg) (model, tea.Cmd, bool) {
 	if m.confirmQuit {
 		switch ks {
 		case "y", "Y":
-			m.cancelTransfers()
+			// Transfers are detached: they keep running after rtr exits and the
+			// journal (already holding their pids) re-attaches them next launch.
 			return m, tea.Quit, true
 		case "n", "N", "esc", "q", "ctrl+c":
 			m.confirmQuit = false
@@ -509,7 +576,6 @@ func (m model) handleGlobalKey(key tea.KeyMsg) (model, tea.Cmd, bool) {
 			m.confirmQuit = true
 			return m, nil, true
 		}
-		m.cancelTransfers()
 		return m, tea.Quit, true
 	}
 

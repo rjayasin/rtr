@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -242,10 +243,11 @@ func (m model) updateTransferFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "c":
 		// Cancel the highlighted transfer if it is still running, then arm a
 		// timer to remove the cancelled row from the panel after a short linger.
+		// Marking it cancelled before the process death is observed also stops
+		// the re-attach path from respawning it.
 		x := m.transfers[m.xferCursor]
-		if !x.done && x.cancel != nil {
-			x.cancel()
-			x.cancel = nil
+		if !x.done && !x.cancelled {
+			x.kill()
 			x.cancelled = true
 			m.persistTransfers()
 			return m, dropXferCmd(x.id)
@@ -307,12 +309,16 @@ func (m model) updateDestPopover(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Cfg:       m.cfg.Rsync,
 		}
 		remove, globs := cleanupTargets(dest, m.pendingSources)
+		key := newXferKey()
+		logPath := filepath.Join(m.xferLogDir, key+".log")
 		m.transfers = append(m.transfers, &xfer{
 			id:            id,
+			key:           key,
 			label:         transferLabel(m.pendingSources),
 			dest:          dest,
 			bookmark:      m.session.Bookmark,
 			sources:       m.pendingSources,
+			logPath:       logPath,
 			cleanupRemove: remove,
 			cleanupGlobs:  globs,
 		})
@@ -321,7 +327,7 @@ func (m model) updateDestPopover(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.selected = map[string]bool{} // ready for the next selection
 		m.err = nil
 		m.persistTransfers()
-		return m, startCmd(id, job)
+		return m, startCmd(id, job, logPath)
 	}
 	var cmd tea.Cmd
 	m.destInput, cmd = m.destInput.Update(msg)
@@ -358,13 +364,17 @@ func (m model) startUpload() (tea.Model, tea.Cmd) {
 	// Record which remote paths to delete if the upload is cancelled — only those
 	// that do not already exist, checked now while the session is known-good.
 	remove, globs := remoteCleanupTargets(m.session, dest, m.pendingSources)
+	key := newXferKey()
+	logPath := filepath.Join(m.xferLogDir, key+".log")
 	m.transfers = append(m.transfers, &xfer{
 		id:            id,
+		key:           key,
 		label:         transferLabel(m.pendingSources),
 		dest:          dest,
 		upload:        true,
 		bookmark:      m.session.Bookmark,
 		sources:       m.pendingSources,
+		logPath:       logPath,
 		cleanupRemove: remove,
 		cleanupGlobs:  globs,
 	})
@@ -373,7 +383,7 @@ func (m model) startUpload() (tea.Model, tea.Cmd) {
 	m.destInput.Blur()
 	m.err = nil
 	m.persistTransfers()
-	return m, startCmd(id, job)
+	return m, startCmd(id, job, logPath)
 }
 
 // updateSearch drives the browser search field. Typing filters the listing

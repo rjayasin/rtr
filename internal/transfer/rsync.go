@@ -1,16 +1,11 @@
-// Package transfer runs rsync transfers (downloads and uploads) in the
-// background, parsing rsync's progress output into a stream of events the UI can
-// render and cancel.
+// Package transfer runs rsync transfers (downloads and uploads) as detached
+// processes that survive rtr exiting, parsing rsync's progress output (via a
+// per-transfer log file) into a stream of events the UI can render and cancel.
 package transfer
 
 import (
-	"bufio"
-	"context"
 	"fmt"
-	"os/exec"
 	"strings"
-	"syscall"
-	"time"
 
 	"github.com/rjayasin/rtr/internal/config"
 	"github.com/rjayasin/rtr/internal/util"
@@ -101,68 +96,4 @@ func (j Job) PreviewCommand() string {
 		bin = "rsync"
 	}
 	return bin + " " + strings.Join(BuildArgs(j), " ")
-}
-
-// Start launches rsync and streams Events on the returned channel until the
-// process exits, at which point it sends a final Event{Done:true} and closes the
-// channel. Cancel the context to abort the transfer.
-func Start(ctx context.Context, j Job) (<-chan Event, error) {
-	bin := j.Cfg.Binary
-	if bin == "" {
-		bin = "rsync"
-	}
-	cmd := exec.CommandContext(ctx, bin, BuildArgs(j)...)
-	// rsync forks worker processes and spawns ssh as the transport. Run it in its
-	// own process group and, on cancel, kill the whole group — otherwise the
-	// default cancel SIGKILLs only the main rsync process and its children keep
-	// transferring in the background. WaitDelay bounds how long Wait blocks if a
-	// child lingers holding the output pipe.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error {
-		if cmd.Process == nil {
-			return nil
-		}
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-	}
-	cmd.WaitDelay = 5 * time.Second
-
-	// rsync writes progress to stdout and diagnostics to stderr; StdoutPipe sets
-	// cmd.Stdout to the pipe's write end, so pointing Stderr at it merges both
-	// streams into one reader and the UI log shows errors inline.
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	cmd.Stderr = cmd.Stdout
-
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-
-	ch := make(chan Event, 64)
-	go func() {
-		defer close(ch)
-		sc := bufio.NewScanner(stdout)
-		sc.Buffer(make([]byte, 0, 64*1024), 1<<20)
-		sc.Split(scanCRLF)
-		for sc.Scan() {
-			tok := strings.TrimRight(sc.Text(), " ")
-			if tok == "" {
-				continue
-			}
-			if p, ok := ParseProgressLine(tok); ok {
-				pc := p
-				ch <- Event{Progress: &pc}
-			} else {
-				ch <- Event{Line: tok}
-			}
-		}
-		scanErr := sc.Err()
-		err := cmd.Wait()
-		if err == nil {
-			err = scanErr // surface a read error only if the process itself succeeded
-		}
-		ch <- Event{Done: true, Err: err}
-	}()
-	return ch, nil
 }

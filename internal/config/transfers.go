@@ -4,17 +4,23 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"time"
 )
 
-// PendingTransfer is an in-progress transfer persisted across runs so rtr can
-// auto-resume it on the next launch. It is stored as transfers.json beside the
-// config file. Dest is the local destination for a download, or the remote
-// destination when Upload is set.
+// PendingTransfer is an in-progress transfer persisted across runs. The rsync
+// process is detached from rtr, so on the next launch rtr re-attaches to it if
+// PID is still alive, or re-spawns it (resuming via --partial) if not. It is
+// stored as transfers.json beside the config file. Dest is the local
+// destination for a download, or the remote destination when Upload is set.
 type PendingTransfer struct {
-	Bookmark Bookmark `json:"bookmark"`
-	Sources  []string `json:"sources"`
-	Dest     string   `json:"dest"`
-	Upload   bool     `json:"upload,omitempty"`
+	ID        string    `json:"id,omitempty"` // stable across restarts; names the log file
+	Bookmark  Bookmark  `json:"bookmark"`
+	Sources   []string  `json:"sources"`
+	Dest      string    `json:"dest"`
+	Upload    bool      `json:"upload,omitempty"`
+	PID       int       `json:"pid,omitempty"` // 0 = never spawned / unknown
+	LogPath   string    `json:"log,omitempty"`
+	StartedAt time.Time `json:"started_at,omitempty"`
 }
 
 // TransfersPath returns the resume file located beside the given config file.
@@ -25,6 +31,16 @@ func TransfersPath(configPath string) string {
 		return ""
 	}
 	return filepath.Join(filepath.Dir(configPath), "transfers.json")
+}
+
+// TransferLogDir returns the directory holding per-transfer rsync log files,
+// located beside the given config file. An empty configPath yields "",
+// mirroring TransfersPath.
+func TransferLogDir(configPath string) string {
+	if configPath == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(configPath), "transfers")
 }
 
 // LoadPendingTransfers reads the resume file; a missing file is not an error.

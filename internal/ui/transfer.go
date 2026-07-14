@@ -1,13 +1,14 @@
 package ui
 
 import (
-	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -20,13 +21,19 @@ import (
 )
 
 // xfer is the live state of one background transfer, shown in the bottom panel.
+// The rsync process is detached (it survives rtr quitting), so alongside the
+// live handle it carries the identity persisted for re-attach on relaunch.
 type xfer struct {
 	id        int
+	key       string          // persistent ID; stable across restarts, names the log file
 	label     string          // file name, or "N items"
 	dest      string          // local dir for a download, remote dir for an upload
 	upload    bool            // direction: false = download (remote→local), true = upload
 	bookmark  config.Bookmark // for persistence / auto-resume
 	sources   []string        // source paths (remote for download, local for upload)
+	pid       int             // detached rsync pid, once started (journaled for re-attach)
+	logPath   string          // rsync output log, tailed for progress
+	startedAt time.Time
 	pct       float64
 	rate      string
 	eta       string
@@ -34,14 +41,33 @@ type xfer struct {
 	last      string // last raw output line, used for error context
 	done      bool
 	cancelled bool // user-cancelled (shown distinctly from a real error)
+	respawned bool // one-shot guard: a re-attached process that died was respawned
 	err       error
-	ch        <-chan transfer.Event
-	cancel    context.CancelFunc
+	handle    *transfer.Handle
 
 	// partial-file cleanup, applied only when the user cancels: top-level
 	// destination entries this job newly created, plus rsync temp-file globs.
 	cleanupRemove []string
 	cleanupGlobs  []string
+}
+
+// newXferKey mints a persistent transfer ID; it names the log file and links
+// journal entries to processes across rtr restarts.
+func newXferKey() string {
+	return fmt.Sprintf("%d-%04x", time.Now().UnixNano(), rand.IntN(1<<16))
+}
+
+// kill stops the detached rsync process group, if one is known. It covers both
+// a live handle and the pre-startedMsg window where only the pid (from a
+// previous run's journal) is known.
+func (x *xfer) kill() {
+	if x.handle != nil {
+		_ = x.handle.Kill()
+		return
+	}
+	if x.pid > 0 {
+		_ = (&transfer.Handle{PID: x.pid}).Kill()
+	}
 }
 
 // job builds the rsync job for this transfer.
@@ -63,15 +89,25 @@ func (m model) activeTransfers() int {
 	return n
 }
 
-// persistTransfers writes the still-running transfers to the resume file so they
-// can be restarted on the next launch (and clears it when none remain).
+// persistTransfers writes the still-running transfers to the resume file so
+// rtr can re-attach to (or, if the process died, restart) them on the next
+// launch, and clears it when none remain.
 func (m model) persistTransfers() {
 	var pend []config.PendingTransfer
 	for _, x := range m.transfers {
 		if x.done || x.cancelled {
 			continue
 		}
-		pend = append(pend, config.PendingTransfer{Bookmark: x.bookmark, Sources: x.sources, Dest: x.dest, Upload: x.upload})
+		pend = append(pend, config.PendingTransfer{
+			ID:        x.key,
+			Bookmark:  x.bookmark,
+			Sources:   x.sources,
+			Dest:      x.dest,
+			Upload:    x.upload,
+			PID:       x.pid,
+			LogPath:   x.logPath,
+			StartedAt: x.startedAt,
+		})
 	}
 	_ = config.SavePendingTransfers(m.transfersPath, pend)
 }
@@ -83,17 +119,6 @@ func (m model) findXfer(id int) *xfer {
 		}
 	}
 	return nil
-}
-
-// cancelTransfers stops every running download (used when leaving the browser).
-func (m *model) cancelTransfers() {
-	for _, x := range m.transfers {
-		if x.cancel != nil {
-			x.cancel()
-			x.cancel = nil
-		}
-	}
-	m.transfers = nil
 }
 
 // dropXfer removes the transfer with the given id from the panel, leaving the
@@ -128,14 +153,28 @@ func (m model) handleEvent(id int, ev transfer.Event) (tea.Model, tea.Cmd) {
 	}
 	switch {
 	case ev.Done:
+		// A re-attached process (from a previous rtr run) that ends is not our
+		// child, so its exit status is unknown. Unless the user cancelled it,
+		// respawn once with --partial: a transfer that had already finished
+		// verifies quickly and exits 0, an interrupted one resumes — and the
+		// respawn is our child, so its exit status is real. respawned guards
+		// against a loop.
+		if errors.Is(ev.Err, transfer.ErrExitUnknown) && !x.cancelled && !x.respawned {
+			x.respawned = true
+			x.handle = nil
+			x.pid = 0
+			x.last = "resuming…"
+			m.persistTransfers()
+			return m, startCmd(x.id, x.job(m.cfg.Rsync), x.logPath)
+		}
 		x.done = true
 		x.err = ev.Err
 		if ev.Err == nil {
 			x.pct = 100
 		}
-		if x.cancel != nil {
-			x.cancel()
-			x.cancel = nil
+		x.handle = nil
+		if x.logPath != "" {
+			os.Remove(x.logPath) // the log has no further use once the transfer ends
 		}
 		// The process has now exited, so it is safe to remove the partial files it
 		// left behind. A download's partials are local and cleaned immediately; an
@@ -167,13 +206,23 @@ func (m model) handleEvent(id int, ev transfer.Event) (tea.Model, tea.Cmd) {
 		x.rate = ev.Progress.Rate
 		x.eta = ev.Progress.ETA
 		x.bytes = ev.Progress.BytesRaw
-		return m, waitEvCmd(id, x.ch)
+		return m, rearmCmd(id, x)
 	default:
 		if ev.Line != "" {
 			x.last = ev.Line
 		}
-		return m, waitEvCmd(id, x.ch)
+		return m, rearmCmd(id, x)
 	}
+}
+
+// rearmCmd re-arms the event wait for a still-running transfer. A nil handle
+// (a transfer between processes, or a synthetic test event) has no channel to
+// wait on.
+func rearmCmd(id int, x *xfer) tea.Cmd {
+	if x.handle == nil {
+		return nil
+	}
+	return waitEvCmd(id, x.handle.Events)
 }
 
 // computeCleanup builds the list of targets to delete if a transfer is
@@ -350,9 +399,10 @@ func (m model) transfersView() string {
 func (m model) quitConfirmBox() string {
 	inner := strings.Join([]string{
 		errStyle.Render("Transfers in progress"),
-		fmt.Sprintf("%d still running — they will resume next launch.", m.activeTransfers()),
+		fmt.Sprintf("%d still running — they'll keep running in the", m.activeTransfers()),
+		"background and reappear next launch.",
 		"",
-		"Quit anyway?  " + helpStyle.Render("y / n"),
+		"Quit?  " + helpStyle.Render("y / n"),
 	}, "\n")
 	return boxStyle.Width(clamp(m.width-8, 30, 56)).Render(inner)
 }

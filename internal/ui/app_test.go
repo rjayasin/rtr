@@ -53,24 +53,34 @@ func TestCancelCleanup(t *testing.T) {
 }
 
 // Pressing c on a highlighted running transfer cancels it and marks it cancelled.
-// Routed through Update, since transfer-focus handling is global.
+// Routed through Update, since transfer-focus handling is global. A cancelled
+// transfer whose process death is later observed (ErrExitUnknown from an
+// attached process) must not be respawned.
 func TestTransferFocusCancel(t *testing.T) {
 	m := testModel()
 	m.screen = screenBrowser
 	m.focus = focusTransfers
-	cancelled := false
-	m.transfers = []*xfer{{id: 0, label: "f", cancel: func() { cancelled = true }}}
+	m.transfers = []*xfer{{id: 0, label: "f"}}
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
 	m = updated.(model)
-	if !cancelled {
-		t.Error("cancel func should have been called")
-	}
 	if !m.transfers[0].cancelled {
 		t.Error("transfer should be marked cancelled")
 	}
 	if cmd == nil {
 		t.Error("cancel should arm the linger timer to remove the row")
+	}
+
+	// The kill is observed as an exit with unknown status; because the transfer
+	// is cancelled, it finishes instead of respawning.
+	updated, cmd = m.handleEvent(0, transfer.Event{Done: true, Err: transfer.ErrExitUnknown})
+	m = updated.(model)
+	x := m.transfers[0]
+	if !x.done || x.respawned {
+		t.Errorf("cancelled transfer should finish, not respawn (done=%v respawned=%v)", x.done, x.respawned)
+	}
+	if cmd != nil {
+		t.Error("no respawn command expected for a cancelled transfer")
 	}
 }
 
@@ -83,7 +93,7 @@ func TestCancelledTransferDropped(t *testing.T) {
 	m.focus = focusTransfers
 	m.transfers = []*xfer{
 		{id: 0, label: "a", cancelled: true},
-		{id: 1, label: "b", cancel: func() {}},
+		{id: 1, label: "b"},
 	}
 
 	// Dropping the cancelled transfer leaves the still-running one.
@@ -108,11 +118,12 @@ func TestCancelledTransferDropped(t *testing.T) {
 }
 
 // Quitting with a running download asks for confirmation rather than quitting;
-// y confirms, n dismisses.
+// y confirms, n dismisses. Confirming leaves the (detached) transfer alone so
+// it keeps running after rtr exits.
 func TestQuitConfirmation(t *testing.T) {
 	m := testModel()
 	m.screen = screenBrowser
-	m.transfers = []*xfer{{id: 0, label: "f", cancel: func() {}}}
+	m.transfers = []*xfer{{id: 0, label: "f"}}
 
 	press := func(r rune) tea.Cmd {
 		updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
@@ -137,6 +148,10 @@ func TestQuitConfirmation(t *testing.T) {
 	if cmd := press('y'); cmd == nil {
 		t.Error("y should issue a quit command")
 	}
+	// The transfer is left running (detached) for the next launch to re-attach.
+	if len(m.transfers) != 1 || m.transfers[0].cancelled || m.transfers[0].done {
+		t.Errorf("quitting must not stop transfers: %+v", m.transfers)
+	}
 }
 
 // With no active transfers, q quits immediately (no confirmation).
@@ -149,7 +164,9 @@ func TestQuitNoTransfers(t *testing.T) {
 	}
 }
 
-// New restores transfers from the resume file; Init restarts them.
+// New restores transfers from the resume file; Init restarts them (their pids
+// are dead, so the attach path is skipped in favor of a fresh --partial spawn).
+// A legacy entry without an ID gets a key and log path assigned.
 func TestResumeRestoresTransfers(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
@@ -158,18 +175,75 @@ func TestResumeRestoresTransfers(t *testing.T) {
 		t.Fatal(err)
 	}
 	pend := []config.PendingTransfer{
-		{Bookmark: config.Bookmark{Host: "h", User: "me"}, Sources: []string{"/r/a.txt"}, Dest: dir},
+		{Bookmark: config.Bookmark{Host: "h", User: "me"}, Sources: []string{"/r/a.txt"}, Dest: dir}, // legacy: no ID/PID/log
+		{ID: "k1", Bookmark: config.Bookmark{Host: "h", User: "me"}, Sources: []string{"/r/b.txt"}, Dest: dir,
+			PID: 999999, LogPath: filepath.Join(dir, "transfers", "k1.log")},
 	}
 	if err := config.SavePendingTransfers(config.TransfersPath(cfgPath), pend); err != nil {
 		t.Fatal(err)
 	}
 
 	m := New(cfg, "test")
-	if len(m.transfers) != 1 || m.transfers[0].label != "a.txt" {
+	if len(m.transfers) != 2 || m.transfers[0].label != "a.txt" {
 		t.Fatalf("restored transfers = %+v", m.transfers)
+	}
+	if m.transfers[0].key == "" || m.transfers[0].logPath == "" {
+		t.Errorf("legacy entry should get a key and log path: %+v", m.transfers[0])
+	}
+	x := m.transfers[1]
+	if x.key != "k1" || x.pid != 999999 || x.logPath != filepath.Join(dir, "transfers", "k1.log") {
+		t.Errorf("journal fields not restored: %+v", x)
 	}
 	if cmd := m.Init(); cmd == nil {
 		t.Error("Init should return commands to restart resumed transfers")
+	}
+}
+
+// A re-attached transfer whose process ends with an unknown exit status is
+// respawned exactly once; a second unknown exit finishes it with the error.
+func TestRespawnOnceOnExitUnknown(t *testing.T) {
+	m := testModel()
+	log := filepath.Join(t.TempDir(), "x.log")
+	m.transfers = []*xfer{{id: 3, label: "f", dest: t.TempDir(), logPath: log}}
+
+	updated, cmd := m.handleEvent(3, transfer.Event{Done: true, Err: transfer.ErrExitUnknown})
+	m = updated.(model)
+	x := m.transfers[0]
+	if x.done || !x.respawned {
+		t.Fatalf("first unknown exit should respawn (done=%v respawned=%v)", x.done, x.respawned)
+	}
+	if cmd == nil {
+		t.Fatal("expected a respawn command")
+	}
+
+	updated, cmd = m.handleEvent(3, transfer.Event{Done: true, Err: transfer.ErrExitUnknown})
+	m = updated.(model)
+	x = m.transfers[0]
+	if !x.done || !errors.Is(x.err, transfer.ErrExitUnknown) {
+		t.Errorf("second unknown exit should finish with the error: %+v", x)
+	}
+	if cmd != nil {
+		t.Error("no second respawn expected")
+	}
+}
+
+// When a transfer finishes (success, failure, or cancel), its log file is
+// removed.
+func TestDoneRemovesLog(t *testing.T) {
+	m := testModel()
+	log := filepath.Join(t.TempDir(), "x.log")
+	if err := os.WriteFile(log, []byte("progress"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m.transfers = []*xfer{{id: 4, label: "f", dest: t.TempDir(), logPath: log}}
+
+	updated, _ := m.handleEvent(4, transfer.Event{Done: true})
+	m = updated.(model)
+	if !m.transfers[0].done {
+		t.Fatal("transfer should be done")
+	}
+	if _, err := os.Stat(log); !errors.Is(err, os.ErrNotExist) {
+		t.Error("log file should be removed once the transfer ends")
 	}
 }
 
@@ -939,7 +1013,7 @@ func TestDownloadDestFollowsLocalPane(t *testing.T) {
 // loop alive, Done stops it and marks completion.
 func TestHandleEvent(t *testing.T) {
 	m := testModel()
-	m.transfers = []*xfer{{id: 7, label: "f"}}
+	m.transfers = []*xfer{{id: 7, label: "f", handle: &transfer.Handle{Events: make(chan transfer.Event)}}}
 
 	p := transfer.Progress{Percent: 42, Rate: "1.2MB/s", ETA: "0:00:05", BytesRaw: "1.2M"}
 	updated, cmd := m.handleEvent(7, transfer.Event{Progress: &p})
