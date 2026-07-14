@@ -81,15 +81,18 @@ func Apply(ctx context.Context, current string, status func(string)) (version st
 	return rel.Version(), true, nil
 }
 
-// isReleaseVersion reports whether s looks like a real release version (vX.Y...),
-// as opposed to a "dev" or commit-hash build that can't be ordered against tags.
+// isReleaseVersion reports whether s is exactly a clean release version
+// (vX.Y.Z), as opposed to a "dev", commit-hash, or git-describe build
+// (v1.1.3-dirty, v1.1.3-5-gabc1234). Those must never be ordered against
+// published tags: semver would treat their suffix as a pre-release and rank
+// the build below the very tag it was built from, nagging about an "update".
 func isReleaseVersion(s string) bool {
 	s = strings.TrimPrefix(strings.TrimSpace(s), "v")
-	parts := strings.SplitN(s, ".", 3)
-	if len(parts) < 2 {
+	parts := strings.Split(s, ".")
+	if len(parts) != 3 {
 		return false
 	}
-	for _, p := range parts[:2] { // major and minor must be plain integers
+	for _, p := range parts { // every component must be a plain integer
 		if p == "" {
 			return false
 		}

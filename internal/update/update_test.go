@@ -9,13 +9,15 @@ func TestIsReleaseVersion(t *testing.T) {
 	}{
 		{"v1.2.3", true},
 		{"1.2.3", true},
-		{"v0.1", true},
-		{"1.2.3-rc1", true}, // pre-release suffix on the patch is fine
 		{"dev", false},
 		{"", false},
-		{"868c814", false},       // commit hash
-		{"868c814-dirty", false}, // dirty source build
-		{"v1", false},            // needs at least major.minor
+		{"868c814", false},           // commit hash
+		{"868c814-dirty", false},     // dirty source build
+		{"v1.1.3-dirty", false},      // tagged commit + local changes
+		{"v1.1.3-5-gabc1234", false}, // commits after the tag (git describe)
+		{"1.2.3-rc1", false},         // any suffix sorts below its own release
+		{"v0.1", false},              // release tags are always three-part
+		{"v1", false},
 	}
 	for _, tc := range cases {
 		if got := isReleaseVersion(tc.in); got != tc.want {
