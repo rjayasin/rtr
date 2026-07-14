@@ -12,7 +12,8 @@ func TestPendingTransfersRoundTrip(t *testing.T) {
 	started := time.Date(2026, 7, 13, 10, 0, 0, 0, time.UTC)
 	want := []PendingTransfer{
 		{ID: "k1", Bookmark: Bookmark{Name: "nas", Host: "nas.local", User: "me", Port: 2222},
-			Sources: []string{"/a", "/b c"}, Dest: "/dl", PID: 4242, LogPath: "/logs/k1.log", StartedAt: started},
+			Sources: []string{"/a", "/b c"}, Dest: "/dl", PID: 4242, LogPath: "/logs/k1.log", StartedAt: started,
+			CleanupRemove: []string{"/dl/a"}, CleanupGlobs: []string{"/dl/.a.??????"}},
 	}
 	if err := SavePendingTransfers(path, want); err != nil {
 		t.Fatal(err)
@@ -26,6 +27,10 @@ func TestPendingTransfersRoundTrip(t *testing.T) {
 	}
 	if got[0].ID != "k1" || got[0].PID != 4242 || got[0].LogPath != "/logs/k1.log" || !got[0].StartedAt.Equal(started) {
 		t.Fatalf("re-attach fields lost in round-trip: %+v", got[0])
+	}
+	if len(got[0].CleanupRemove) != 1 || got[0].CleanupRemove[0] != "/dl/a" ||
+		len(got[0].CleanupGlobs) != 1 || got[0].CleanupGlobs[0] != "/dl/.a.??????" {
+		t.Fatalf("cleanup fields lost in round-trip: %+v", got[0])
 	}
 
 	// Saving an empty list removes the file.

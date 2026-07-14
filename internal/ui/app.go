@@ -180,16 +180,18 @@ func New(cfg *config.Config, version string) model {
 				logPath = filepath.Join(m.xferLogDir, key+".log")
 			}
 			m.transfers = append(m.transfers, &xfer{
-				id:        m.nextXfer,
-				key:       key,
-				label:     transferLabel(p.Sources),
-				dest:      p.Dest,
-				upload:    p.Upload,
-				bookmark:  p.Bookmark,
-				sources:   p.Sources,
-				pid:       p.PID,
-				logPath:   logPath,
-				startedAt: p.StartedAt,
+				id:            m.nextXfer,
+				key:           key,
+				label:         transferLabel(p.Sources),
+				dest:          p.Dest,
+				upload:        p.Upload,
+				bookmark:      p.Bookmark,
+				sources:       p.Sources,
+				pid:           p.PID,
+				logPath:       logPath,
+				startedAt:     p.StartedAt,
+				cleanupRemove: p.CleanupRemove,
+				cleanupGlobs:  p.CleanupGlobs,
 			})
 			m.nextXfer++
 		}

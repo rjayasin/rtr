@@ -99,14 +99,16 @@ func (m model) persistTransfers() {
 			continue
 		}
 		pend = append(pend, config.PendingTransfer{
-			ID:        x.key,
-			Bookmark:  x.bookmark,
-			Sources:   x.sources,
-			Dest:      x.dest,
-			Upload:    x.upload,
-			PID:       x.pid,
-			LogPath:   x.logPath,
-			StartedAt: x.startedAt,
+			ID:            x.key,
+			Bookmark:      x.bookmark,
+			Sources:       x.sources,
+			Dest:          x.dest,
+			Upload:        x.upload,
+			PID:           x.pid,
+			LogPath:       x.logPath,
+			StartedAt:     x.startedAt,
+			CleanupRemove: x.cleanupRemove,
+			CleanupGlobs:  x.cleanupGlobs,
 		})
 	}
 	_ = config.SavePendingTransfers(m.transfersPath, pend)

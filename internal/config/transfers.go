@@ -21,6 +21,14 @@ type PendingTransfer struct {
 	PID       int       `json:"pid,omitempty"` // 0 = never spawned / unknown
 	LogPath   string    `json:"log,omitempty"`
 	StartedAt time.Time `json:"started_at,omitempty"`
+
+	// Partial-file cleanup applied if the transfer is cancelled: destination
+	// entries the job newly created plus rsync temp-file globs. Computed when
+	// the transfer was first queued (a partial already on disk at resume time
+	// would otherwise look pre-existing) and carried across restarts so
+	// cancelling a resumed transfer cleans up like cancelling a fresh one.
+	CleanupRemove []string `json:"cleanup_remove,omitempty"`
+	CleanupGlobs  []string `json:"cleanup_globs,omitempty"`
 }
 
 // TransfersPath returns the resume file located beside the given config file.

@@ -199,6 +199,62 @@ func TestResumeRestoresTransfers(t *testing.T) {
 	}
 }
 
+// Cancelling a transfer restored from a previous run removes its partial
+// files, exactly like cancelling one queued this session: the cleanup targets
+// journaled at queue time survive the restart.
+func TestResumedCancelCleansPartials(t *testing.T) {
+	dl := t.TempDir()
+	partial := filepath.Join(dl, "new.bin")
+	tmp := filepath.Join(dl, ".new.bin.AbC123")
+
+	cfgDir := t.TempDir()
+	cfgPath := filepath.Join(cfgDir, "config.toml")
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pend := []config.PendingTransfer{{
+		ID:            "k1",
+		Bookmark:      config.Bookmark{Host: "h", User: "me"},
+		Sources:       []string{"/r/new.bin"},
+		Dest:          dl,
+		CleanupRemove: []string{partial},
+		CleanupGlobs:  []string{filepath.Join(dl, ".new.bin.??????")},
+	}}
+	if err := config.SavePendingTransfers(config.TransfersPath(cfgPath), pend); err != nil {
+		t.Fatal(err)
+	}
+
+	// The partial download and rsync temp file left by the previous run.
+	for _, p := range []string{partial, tmp} {
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	m := New(cfg, "test")
+	if len(m.transfers) != 1 || len(m.transfers[0].cleanupRemove) != 1 {
+		t.Fatalf("cleanup targets not restored: %+v", m.transfers[0])
+	}
+
+	// Cancel via the transfers panel, then the process death is observed.
+	m.screen = screenBrowser
+	m.focus = focusTransfers
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = updated.(model)
+	updated, _ = m.handleEvent(m.transfers[0].id, transfer.Event{Done: true, Err: transfer.ErrExitUnknown})
+	m = updated.(model)
+
+	if !m.transfers[0].cancelled || !m.transfers[0].done {
+		t.Fatalf("transfer should be cancelled and done: %+v", m.transfers[0])
+	}
+	for _, p := range []string{partial, tmp} {
+		if _, err := os.Stat(p); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%s should be removed on cancel of a resumed transfer", filepath.Base(p))
+		}
+	}
+}
+
 // A re-attached transfer whose process ends with an unknown exit status is
 // respawned exactly once; a second unknown exit finishes it with the error.
 func TestRespawnOnceOnExitUnknown(t *testing.T) {
