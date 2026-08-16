@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"os"
 	"path"
@@ -35,7 +36,7 @@ type xfer struct {
 	logPath    string          // rsync output log, tailed for progress
 	startedAt  time.Time
 	finishedAt time.Time // set when the transfer ends; drives the completed-line stats
-	pct        float64
+	pct        float64   // 0..100, interpolated between rsync's whole-percent samples
 	rate       string
 	eta        string
 	bytes      int64  // total bytes transferred, from the latest progress sample
@@ -45,6 +46,13 @@ type xfer struct {
 	respawned  bool // one-shot guard: a re-attached process that died was respawned
 	err        error
 	handle     *transfer.Handle
+
+	// Sub-percent interpolation state (see applyProgress): the last whole
+	// percent rsync reported, the byte count it was first seen at, and the
+	// running estimate of how many bytes one percent of this transfer is.
+	wholePct    float64
+	pctBytes    int64
+	bytesPerPct float64
 
 	// partial-file cleanup, applied only when the user cancels: top-level
 	// destination entries this job newly created, plus rsync temp-file globs.
@@ -206,16 +214,54 @@ func (m model) handleEvent(id int, ev transfer.Event) (tea.Model, tea.Cmd) {
 		}
 		return m, cleanup
 	case ev.Progress != nil:
-		x.pct = ev.Progress.Percent
-		x.rate = ev.Progress.Rate
-		x.eta = ev.Progress.ETA
-		x.bytes = ev.Progress.Bytes
+		x.applyProgress(*ev.Progress)
 		return m, rearmCmd(id, x)
 	default:
 		if ev.Line != "" {
 			x.last = ev.Line
 		}
 		return m, rearmCmd(id, x)
+	}
+}
+
+// sizeScale converts the destination popover's measured source size into a
+// bytes-per-percent seed for a transfer about to start. It is zero when the
+// size is unknown (the walk is still running, or nothing was measured), in
+// which case interpolation simply waits for rsync's own numbers.
+func (m model) sizeScale() float64 {
+	if m.sizeLoading || m.pendingSize <= 0 {
+		return 0
+	}
+	return float64(m.pendingSize) / 100
+}
+
+// applyProgress folds one rsync sample into the transfer's live state.
+//
+// rsync's --info=progress2 reports whole percents only, so the bar would step in
+// 1% jumps (and, on a bar narrower than 100 cells, in even coarser visual
+// jumps). The byte counter printed alongside is much finer, so the displayed
+// percentage is interpolated inside the current whole-percent bracket: bytes
+// divided by percent is an estimate of the transfer's size per percent, and the
+// bytes accumulated since this percent began say how far into it we are. The
+// interpolation is clamped below the next whole percent, so it can only ever
+// refine what rsync reported, never contradict it or run backwards within a
+// bracket.
+func (x *xfer) applyProgress(p transfer.Progress) {
+	x.rate = p.Rate
+	x.eta = p.ETA
+	x.bytes = p.Bytes
+
+	// A new bracket — or a restart, where a resumed transfer's byte count drops
+	// back — re-anchors the interpolation and re-estimates the scale.
+	if p.Percent != x.wholePct || p.Bytes < x.pctBytes {
+		x.wholePct, x.pctBytes = p.Percent, p.Bytes
+		if p.Percent > 0 && p.Bytes > 0 {
+			x.bytesPerPct = float64(p.Bytes) / p.Percent
+		}
+	}
+	x.pct = p.Percent
+	if x.bytesPerPct > 0 && p.Bytes > x.pctBytes {
+		x.pct += math.Min(float64(p.Bytes-x.pctBytes)/x.bytesPerPct, 0.99)
 	}
 }
 
@@ -318,7 +364,7 @@ func (m model) remoteCleanupCmd(x *xfer) tea.Cmd {
 // there is room, while always leaving space for the marker, bar, and stats.
 func (m model) xferNameWidth() int {
 	// reserved: marker(2) + spaces(2) + progress bar + a rate/ETA stats budget.
-	avail := m.width - m.progress.Width - 26
+	avail := m.width - m.barWidth - 26
 	longest := 0
 	for _, x := range m.transfers {
 		if w := ansi.StringWidth(x.label); w > longest {
@@ -389,7 +435,7 @@ func (m model) transfersView() string {
 			if x.eta != "" {
 				parts = append(parts, "ETA "+x.eta)
 			}
-			right = m.progress.ViewAs(x.pct / 100)
+			right = renderBar(m.barWidth, x.pct)
 			if len(parts) > 0 {
 				right += " " + dimStyle.Render(strings.Join(parts, " "))
 			}

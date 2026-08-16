@@ -321,6 +321,10 @@ func (m model) updateDestPopover(msg tea.Msg) (tea.Model, tea.Cmd) {
 			logPath:       logPath,
 			cleanupRemove: remove,
 			cleanupGlobs:  globs,
+			// Seed the sub-percent interpolation with the size the popover
+			// already walked, so the bar moves before rsync's first whole
+			// percent lands.
+			bytesPerPct: m.sizeScale(),
 		})
 		m.destActive = false
 		m.destInput.Blur()
@@ -377,6 +381,9 @@ func (m model) startUpload() (tea.Model, tea.Cmd) {
 		logPath:       logPath,
 		cleanupRemove: remove,
 		cleanupGlobs:  globs,
+		// Seed the sub-percent interpolation with the size the popover already
+		// walked, so the bar moves before rsync's first whole percent lands.
+		bytesPerPct: m.sizeScale(),
 	})
 	m.destActive = false
 	m.destUpload = false

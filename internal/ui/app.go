@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -93,7 +92,7 @@ type model struct {
 	compareMode       bool // ~ toggles dimming/grouping files present in both panes
 
 	// background transfers, shown stacked at the bottom of every screen
-	progress          progress.Model
+	barWidth          int // width of an inline transfer bar, label included
 	transfers         []*xfer
 	nextXfer          int
 	transfersPath     string // resume file (transfers.json beside the config)
@@ -158,7 +157,7 @@ func New(cfg *config.Config, version string) model {
 		destInput:        di,
 		searchInput:      si,
 		localSearchInput: lsi,
-		progress:         progress.New(progress.WithDefaultGradient()),
+		barWidth:         defaultBarWidth,
 		showHelp:         true,
 		startDir:         wd,
 		transfersPath:    config.TransfersPath(cfg.Path()),
@@ -423,7 +422,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.progress.Width = clamp(msg.Width/3, 16, 36) // compact inline bars
+		m.barWidth = clamp(msg.Width/3, 20, 40) // compact inline bars
 		m.destInput.Width = clamp(msg.Width/2, 10, 60)
 		return m, nil
 
