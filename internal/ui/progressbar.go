@@ -29,13 +29,34 @@ const (
 // 8 (a full cell) is barFull.
 var barEighths = [8]rune{' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉'}
 
-// Fill gradient, matching the default bubbles progress gradient rtr used before
-// it drew its own bar, and the dim fill for the not-yet-transferred remainder.
-var (
-	barColorA, _  = colorful.Hex("#5A56E0")
-	barColorB, _  = colorful.Hex("#EE6FF8")
-	barEmptyStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#606060"))
+// Fill gradient: the indigo-to-pink endpoints of the default bubbles progress
+// gradient rtr used before it drew its own bar, with intermediate stops so the
+// ramp travels through the saturated blues, violets and magentas between them
+// instead of cutting straight across. Adjacent stops are blended in CIE L*u*v*,
+// so the extra stops bend the path without introducing visible seams.
+var barStops = mustColors(
+	"#5A56E0", // indigo
+	"#6C5BEA", // blue-violet
+	"#8A5FF1", // violet
+	"#AC63F5", // purple
+	"#CB68F7", // magenta
+	"#EE6FF8", // pink
 )
+
+// The dim fill for the not-yet-transferred remainder.
+var barEmptyStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#606060"))
+
+func mustColors(hexes ...string) []colorful.Color {
+	cs := make([]colorful.Color, len(hexes))
+	for i, h := range hexes {
+		c, err := colorful.Hex(h)
+		if err != nil {
+			panic("ui: bad gradient stop " + h + ": " + err.Error())
+		}
+		cs[i] = c
+	}
+	return cs
+}
 
 // renderBar draws pct (0..100) as a gradient progress bar occupying exactly
 // width columns, trailing percentage label included.
@@ -70,5 +91,17 @@ func barCellStyle(i, width int) lipgloss.Style {
 	if width > 1 {
 		p = float64(i) / float64(width-1)
 	}
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(barColorA.BlendLuv(barColorB, p).Hex()))
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(barColorAt(p).Hex()))
+}
+
+// barColorAt samples the multi-stop gradient at p (0..1): it picks the pair of
+// stops p falls between and blends them by p's position within that segment.
+func barColorAt(p float64) colorful.Color {
+	p = math.Max(0, math.Min(1, p))
+	segs := len(barStops) - 1
+	i := int(p * float64(segs))
+	if i >= segs {
+		i = segs - 1
+	}
+	return barStops[i].BlendLuv(barStops[i+1], p*float64(segs)-float64(i))
 }

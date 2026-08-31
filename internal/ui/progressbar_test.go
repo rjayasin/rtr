@@ -40,6 +40,33 @@ func TestRenderBarSubCellResolution(t *testing.T) {
 	}
 }
 
+// The multi-stop gradient still starts and ends on the bar's endpoint colors,
+// and every stop in between is reached exactly once across the ramp.
+func TestBarColorRamp(t *testing.T) {
+	if got := barColorAt(0).Hex(); got != barStops[0].Hex() {
+		t.Errorf("barColorAt(0) = %s, want %s", got, barStops[0].Hex())
+	}
+	last := barStops[len(barStops)-1]
+	if got := barColorAt(1).Hex(); got != last.Hex() {
+		t.Errorf("barColorAt(1) = %s, want %s", got, last.Hex())
+	}
+	for i, stop := range barStops {
+		p := float64(i) / float64(len(barStops)-1)
+		if got := barColorAt(p).Hex(); got != stop.Hex() {
+			t.Errorf("barColorAt(%v) = %s, want stop %d (%s)", p, got, i, stop.Hex())
+		}
+	}
+	// No seams: neighbouring samples stay a small step apart in Luv.
+	prev := barColorAt(0)
+	for i := 1; i <= 200; i++ {
+		c := barColorAt(float64(i) / 200)
+		if d := prev.DistanceLuv(c); d > 0.02 {
+			t.Errorf("gradient jumps by %v at p=%v", d, float64(i)/200)
+		}
+		prev = c
+	}
+}
+
 // applyProgress refines rsync's whole percents with the byte counter: inside a
 // percent the bar advances, but never past the next whole percent rsync has yet
 // to report.
