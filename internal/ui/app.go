@@ -74,8 +74,8 @@ type model struct {
 	// showHidden toggles dot-file visibility in both panes (`.`); hidden by default.
 	showHidden bool
 
-	// showHelp toggles the keyboard-tips footer (`?`); shown by default. Hiding
-	// it gives the listing the row the footer occupied.
+	// showHelp toggles the keyboard-tips footer (`?`); hidden by default so the
+	// listing gets the row the footer would occupy.
 	showHelp bool
 
 	// local file pane (toggled with `l`): a read-only view of the local
@@ -158,7 +158,6 @@ func New(cfg *config.Config, version string) model {
 		searchInput:      si,
 		localSearchInput: lsi,
 		barWidth:         defaultBarWidth,
-		showHelp:         true,
 		startDir:         wd,
 		transfersPath:    config.TransfersPath(cfg.Path()),
 		xferLogDir:       config.TransferLogDir(cfg.Path()),

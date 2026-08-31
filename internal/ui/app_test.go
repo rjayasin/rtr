@@ -1221,40 +1221,51 @@ func TestHandleEventRecordsStats(t *testing.T) {
 	}
 }
 
-// `?` toggles the keyboard-tips footer on any non-text screen; hiding it gives
-// the listing the footer's row back.
+// `?` toggles the keyboard-tips footer on any non-text screen; it starts hidden,
+// so the listing has the footer's row until the first `?`.
 func TestHelpToggle(t *testing.T) {
 	m := testModel()
 	m.screen = screenBrowser
 	m.cwd = "/volume1"
 
-	if !m.showHelp {
-		t.Fatal("help should start visible")
+	if m.showHelp {
+		t.Fatal("help should start hidden")
 	}
-	rowsWithHelp := m.visibleRows()
-	if !strings.Contains(ansi.Strip(m.viewBrowser()), "q quit") {
-		t.Error("footer should render while help is on")
+	rowsWithoutHelp := m.visibleRows()
+	if strings.Contains(ansi.Strip(m.viewBrowser()), "q quit") {
+		t.Error("footer should not render while help is off")
+	}
+	// The hidden footer leaves the `?` toggle to the status row (browser) and a
+	// standalone line (bookmarks), so it stays discoverable.
+	if !strings.Contains(ansi.Strip(m.viewBrowser()), keysHint) {
+		t.Error("browser status row should hint at ? while help is off")
+	}
+	if !strings.Contains(ansi.Strip(m.viewBookmarks()), keysHint) {
+		t.Error("bookmarks should hint at ? while help is off")
 	}
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 	m = updated.(model)
-	if m.showHelp {
-		t.Fatal("? should hide the help footer")
+	if !m.showHelp {
+		t.Fatal("? should show the help footer")
 	}
-	if strings.Contains(ansi.Strip(m.viewBrowser()), "q quit") {
-		t.Error("footer should not render while help is off")
+	if !strings.Contains(ansi.Strip(m.viewBrowser()), "q quit") {
+		t.Error("footer should render while help is on")
 	}
-	if got := m.visibleRows(); got != rowsWithHelp+1 {
-		t.Errorf("visibleRows = %d, want %d (footer row reclaimed)", got, rowsWithHelp+1)
+	if strings.Contains(ansi.Strip(m.viewBrowser()), keysHint) {
+		t.Error("the ? hint should give way to the footer it stands in for")
 	}
-	if strings.Contains(ansi.Strip(m.viewBookmarks()), "enter connect") {
+	if got := m.visibleRows(); got != rowsWithoutHelp-1 {
+		t.Errorf("visibleRows = %d, want %d (footer takes a row)", got, rowsWithoutHelp-1)
+	}
+	if !strings.Contains(ansi.Strip(m.viewBookmarks()), "enter connect") {
 		t.Error("bookmarks footer should honor the toggle too")
 	}
 
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 	m = updated.(model)
-	if !m.showHelp {
-		t.Error("second ? should show the help footer again")
+	if m.showHelp {
+		t.Error("second ? should hide the help footer again")
 	}
 }
 

@@ -92,6 +92,8 @@ func (m model) viewBookmarks() string {
 	}
 	if m.showHelp {
 		fmt.Fprintf(&b, "\n%s", helpStyle.Render(m.footer(helpBookmarks)))
+	} else {
+		fmt.Fprintf(&b, "\n%s", helpStyle.Render(keysHint))
 	}
 	return b.String()
 }

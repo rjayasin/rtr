@@ -5,4 +5,7 @@ package ui
 const (
 	helpBookmarks = "↑/↓ move • enter connect • n new • e edit • d delete"
 	helpForm      = "tab/↑↓ field • enter save • esc cancel"
+	// keysHint stands in for a footer while it is hidden (the default), so the
+	// `?` toggle stays discoverable.
+	keysHint = "? keys"
 )

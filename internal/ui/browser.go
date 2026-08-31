@@ -604,7 +604,13 @@ func (m model) viewBrowser() string {
 	}
 	lines = append(lines, body...)
 
+	// With the tips footer off, the status row is the only always-visible line
+	// left to advertise the `?` toggle, so the hint sits in its left slot until
+	// there is something more useful to say there.
 	status := ""
+	if !m.showHelp {
+		status = keysHint
+	}
 	if n := len(m.selected); n > 0 {
 		status = fmt.Sprintf("%d selected", n)
 	}
