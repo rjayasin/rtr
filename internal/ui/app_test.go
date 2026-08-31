@@ -676,6 +676,39 @@ func TestListRowNameThenSize(t *testing.T) {
 	}
 }
 
+// esc unwinds one state at a time: it clears a live filter first, then the
+// selection, and only prompts to disconnect once there is nothing left to undo.
+func TestEscClearsSelectionBeforeDisconnect(t *testing.T) {
+	m := browserWithEntries()
+	m.selected["/volume1/notes.txt"] = true
+	m.searchInput.SetValue("note")
+
+	esc := tea.KeyMsg{Type: tea.KeyEsc}
+	updated, _ := m.Update(esc)
+	m = updated.(model)
+	if m.searchInput.Value() != "" {
+		t.Fatal("the first esc should clear the filter")
+	}
+	if len(m.selected) != 1 {
+		t.Fatal("clearing the filter should leave the selection alone")
+	}
+
+	updated, _ = m.Update(esc)
+	m = updated.(model)
+	if len(m.selected) != 0 {
+		t.Errorf("esc should clear the selection, %d entries still selected", len(m.selected))
+	}
+	if m.confirmDisconnect {
+		t.Error("esc should not reach the disconnect prompt while entries are selected")
+	}
+
+	updated, _ = m.Update(esc)
+	m = updated.(model)
+	if !m.confirmDisconnect {
+		t.Error("esc with nothing selected should prompt to disconnect")
+	}
+}
+
 // esc in the browser opens a disconnect confirmation; esc/n dismiss it (staying
 // connected) and y disconnects to the bookmarks screen.
 func TestDisconnectConfirm(t *testing.T) {

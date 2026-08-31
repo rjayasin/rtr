@@ -61,7 +61,7 @@ rtr version              # print the version
 | Screen     | Keys |
 |------------|------|
 | Bookmarks  | `↑/↓` move<br>`enter` connect<br>`n` new<br>`e` edit<br>`d` delete<br>`tab` focus transfers<br>`?` toggle keyboard tips (hidden by default)<br>`q` quit |
-| Browser    | `↑/↓` move<br>`→` open dir<br>`←` up<br>`x`/`space` select (checkboxes appear once something is selected)<br>`a` all<br>`c` clear<br>`/` search<br>`l` toggle local pane<br>`~` toggle compare<br>`t` sort by time (toggle newest/oldest)<br>`n` sort by name (toggle A→Z/Z→A)<br>`.` toggle hidden files<br>`enter` download<br>`tab`/`shift+tab` switch pane (forward/back)<br>`?` toggle keyboard tips (hidden by default)<br>`r` refresh<br>`esc` disconnect (or clear filter) |
+| Browser    | `↑/↓` move<br>`→` open dir<br>`←` up<br>`x`/`space` select (checkboxes appear once something is selected)<br>`a` all<br>`c` clear<br>`/` search<br>`l` toggle local pane<br>`~` toggle compare<br>`t` sort by time (toggle newest/oldest)<br>`n` sort by name (toggle A→Z/Z→A)<br>`.` toggle hidden files<br>`enter` download<br>`tab`/`shift+tab` switch pane (forward/back)<br>`?` toggle keyboard tips (hidden by default)<br>`r` refresh<br>`esc` disconnect (or clear filter/selection first) |
 | Search (`/`) | type to filter by name (case-insensitive, matches anywhere)<br>`enter` accept and return to the list<br>`esc` clear |
 | Compare (`~`) | with the local pane open, dims files present in **both** panes and sinks them to the bottom of each pane (unique files stay on top); each group still follows the pane's sort order |
 | Transfers (`tab`) | `↑/↓` select<br>`c` cancel highlighted<br>`x` clear finished<br>`tab`/`esc` back |

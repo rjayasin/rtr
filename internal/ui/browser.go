@@ -126,9 +126,14 @@ func (m model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) updateFileFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case "esc":
-		// A live filter is cleared first; a second esc prompts to disconnect.
+		// esc unwinds the browser one state at a time: a live filter first, then
+		// the selection, and only then the disconnect prompt.
 		if m.searchInput.Value() != "" {
 			m.clearSearch()
+			return m, nil
+		}
+		if len(m.selected) > 0 {
+			m.selected = map[string]bool{}
 			return m, nil
 		}
 		// Confirm before leaving the browser. Downloads keep running either way
