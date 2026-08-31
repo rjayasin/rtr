@@ -615,6 +615,67 @@ func TestNoSelectionHidesCount(t *testing.T) {
 	}
 }
 
+// The selection column is dropped while nothing is selected, so names sit flush
+// against the cursor marker; the first selection brings the boxes back.
+func TestCheckboxesOnlyWhenSelected(t *testing.T) {
+	m := browserWithEntries()
+	rows := m.listLines(4, 60, nil)
+	if strings.Contains(ansi.Strip(rows[0]), "[ ]") {
+		t.Errorf("row %q should have no checkbox while nothing is selected", ansi.Strip(rows[0]))
+	}
+	if got, want := ansi.Strip(rows[0]), "➤ report.pdf"; !strings.HasPrefix(got, want) {
+		t.Errorf("row = %q, want it to start with %q", got, want)
+	}
+
+	m.selected["/volume1/notes.txt"] = true
+	rows = m.listLines(4, 60, nil)
+	if got, want := ansi.Strip(rows[0]), "➤ [ ] report.pdf"; !strings.HasPrefix(got, want) {
+		t.Errorf("row = %q, want it to start with %q", got, want)
+	}
+	if !strings.Contains(ansi.Strip(rows[3]), "[x] notes.txt") {
+		t.Errorf("selected row = %q, want a ticked box", ansi.Strip(rows[3]))
+	}
+}
+
+// Names run left-aligned from the marker and the size is flushed to the pane's
+// right edge; an over-long name loses its tail rather than the size column.
+func TestListRowNameThenSize(t *testing.T) {
+	m := browserWithEntries()
+	m.entries = append(m.entries, sshx.Entry{
+		Name: strings.Repeat("long-name-", 8) + ".bin",
+		Path: "/volume1/long.bin",
+		Size: 4096,
+	})
+
+	const width = 40
+	rows := m.listLines(5, width, nil)
+	for _, row := range rows {
+		if got := ansi.StringWidth(row); got != width {
+			t.Errorf("row %q width = %d, want %d", ansi.Strip(row), got, width)
+		}
+	}
+
+	first := ansi.Strip(rows[0])
+	name, size := strings.Index(first, "report.pdf"), strings.Index(first, "10B")
+	if name < 0 || size < 0 {
+		t.Fatalf("row = %q, want both the name and its size", first)
+	}
+	if size < name {
+		t.Errorf("row = %q, want the size after the name", first)
+	}
+	if got := strings.TrimRight(first, " "); !strings.HasSuffix(got, "10B") {
+		t.Errorf("row = %q, want the size flushed to the pane's right edge", first)
+	}
+
+	long := ansi.Strip(rows[4])
+	if !strings.HasSuffix(strings.TrimRight(long, " "), "4.0K") {
+		t.Errorf("truncated row = %q, want the size kept at the right edge", long)
+	}
+	if !strings.Contains(long, "…") {
+		t.Errorf("row = %q, want the name truncated with an ellipsis", long)
+	}
+}
+
 // esc in the browser opens a disconnect confirmation; esc/n dismiss it (staying
 // connected) and y disconnects to the bookmarks screen.
 func TestDisconnectConfirm(t *testing.T) {

@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -268,7 +267,7 @@ func sortLocalEntries(entries []localEntry, mode sortMode) {
 
 // localListLines renders exactly rows lines of the local listing (padded with
 // blanks), mirroring the remote listLines layout minus the selection column.
-func (m model) localListLines(rows int, common map[string]bool) []string {
+func (m model) localListLines(rows, width int, common map[string]bool) []string {
 	entries := m.displayedLocalEntriesWith(common)
 	out := make([]string, 0, rows)
 	switch {
@@ -290,10 +289,9 @@ func (m model) localListLines(rows int, common map[string]bool) []string {
 		if cursorRow {
 			marker = cursorStyle.Render("➤ ")
 		}
-		out = append(out, fmt.Sprintf("%s%s  %s",
-			marker,
-			sizeCell(e.isDir, common[e.name], e.size, cursorRow),
-			nameCell(e.name, e.isDir, common[e.name], cursorRow)))
+		out = append(out, listRow(width, marker,
+			nameCell(e.name, e.isDir, common[e.name], cursorRow),
+			sizeCell(e.isDir, common[e.name], e.size, cursorRow)))
 	}
 	for len(out) < rows {
 		out = append(out, "")
@@ -318,14 +316,25 @@ func (m model) browserColumns(common map[string]bool) []string {
 
 	remoteHead := m.sectionLabel(focusFiles, "remote") + dimStyle.Render(" "+m.cwd) + searchSuffix(m.searchActive, m.searchInput.Value())
 	localHead := m.sectionLabel(focusLocal, "local") + dimStyle.Render(" "+m.localCwd) + searchSuffix(m.localSearchActive, m.localSearchInput.Value())
-	left := append([]string{remoteHead, ""}, m.listLines(rows, common)...)
-	right := append([]string{localHead, ""}, m.localListLines(rows, common)...)
+	left := append([]string{remoteHead, ""}, m.listLines(rows, lw, common)...)
+	right := append([]string{localHead, ""}, m.localListLines(rows, rw, common)...)
 
 	out := make([]string, len(left))
 	for i := range left {
 		out[i] = fitLine(left[i], lw) + dimStyle.Render(sep) + fitLine(right[i], rw)
 	}
 	return out
+}
+
+// listRow lays out one listing line: the marker, selection box and name flush
+// left, the size right-aligned at the pane's edge. Only the name is truncated
+// when the row would overflow, so the size column stays where it is.
+func listRow(width int, prefix, name, size string) string {
+	avail := width - ansi.StringWidth(prefix) - ansi.StringWidth(size) - 1 // 1 = gap
+	if avail < 1 {
+		avail = 1
+	}
+	return spread(prefix+ansi.Truncate(name, avail, "…"), size, width)
 }
 
 // fitLine truncates s to width w (ANSI-aware, with an ellipsis) and pads it with

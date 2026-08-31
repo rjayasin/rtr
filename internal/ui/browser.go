@@ -537,7 +537,8 @@ func (m model) visibleRows() int {
 
 // listLines renders exactly rows lines of the directory listing (padded with
 // blanks), so the status/panel/footer stay pinned to the bottom of the window.
-func (m model) listLines(rows int, common map[string]bool) []string {
+// width is the pane the listing occupies, which the size column is flushed to.
+func (m model) listLines(rows, width int, common map[string]bool) []string {
 	entries := m.displayedEntriesWith(common)
 	out := make([]string, 0, rows)
 	if len(entries) == 0 {
@@ -551,28 +552,32 @@ func (m model) listLines(rows int, common map[string]bool) []string {
 	if end > len(entries) {
 		end = len(entries)
 	}
+	// The selection column only earns its four columns once something is
+	// selected; until then the names start where the checkboxes would.
+	checks := len(m.selected) > 0
 	for i := m.brOffset; i < end; i++ {
 		e := entries[i]
 		cursorRow := i == m.brCursor && m.focus == focusFiles
-		marker := "  "
+		prefix := "  "
 		if cursorRow {
-			marker = cursorStyle.Render("➤ ")
+			prefix = cursorStyle.Render("➤ ")
 		}
-		check := "[ ]"
-		if m.selected[e.Path] {
-			check = "[x]"
+		if checks {
+			check := "[ ]"
+			if m.selected[e.Path] {
+				check = "[x]"
+			}
+			switch {
+			case cursorRow:
+				check = cursorCellStyle(e.IsDir).Render(check)
+			case m.selected[e.Path]:
+				check = selectedStyle.Render(check)
+			}
+			prefix += check + " "
 		}
-		switch {
-		case cursorRow:
-			check = cursorCellStyle(e.IsDir).Render(check)
-		case m.selected[e.Path]:
-			check = selectedStyle.Render(check)
-		}
-		out = append(out, fmt.Sprintf("%s%s %s  %s",
-			marker,
-			check,
-			sizeCell(e.IsDir, common[e.Name], e.Size, cursorRow),
-			nameCell(e.Name, e.IsDir, common[e.Name], cursorRow)))
+		out = append(out, listRow(width, prefix,
+			nameCell(e.Name, e.IsDir, common[e.Name], cursorRow),
+			sizeCell(e.IsDir, common[e.Name], e.Size, cursorRow)))
 	}
 	for len(out) < rows {
 		out = append(out, "")
@@ -597,7 +602,7 @@ func (m model) viewBrowser() string {
 		body = m.browserColumns(common)
 	} else {
 		breadcrumb := m.sectionLabel(focusFiles, "remote") + dimStyle.Render(" "+m.cwd) + searchSuffix(m.searchActive, m.searchInput.Value())
-		body = append([]string{breadcrumb, ""}, m.listLines(m.visibleRows(), common)...)
+		body = append([]string{breadcrumb, ""}, m.listLines(m.visibleRows(), max(m.width, 1), common)...)
 	}
 	if m.destActive {
 		body = overlayCenter(body, m.destPopover(), max(m.width, 1))
