@@ -35,9 +35,6 @@ var (
 
 	selectedStyle = lipgloss.NewStyle().Foreground(colSel)
 
-	// connStyle renders the connected bookmark label in the bottom-right corner.
-	connStyle = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
-
 	// cursorFileStyle and cursorDirStyle render the cursor row: bold bright white
 	// for files, bold bright blue for directories, so the current entry stands out.
 	cursorFileStyle = lipgloss.NewStyle().Foreground(colBright).Bold(true)
