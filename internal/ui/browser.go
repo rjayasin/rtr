@@ -520,10 +520,13 @@ func (m *model) clampScroll() {
 }
 
 func (m model) visibleRows() int {
-	// chrome: breadcrumb + blank + status = 3 lines, plus the shortcut footer
-	// when it is visible (`?` toggles it). When there are transfers, add the
-	// divider plus the panel.
-	chrome := 3
+	// chrome: breadcrumb + blank = 2 lines, plus the status row when it has
+	// something to say and the shortcut footer when it is visible (`?` toggles
+	// it). When there are transfers, add the divider plus the panel.
+	chrome := 2
+	if m.statusText() != "" {
+		chrome++
+	}
 	if m.showHelp {
 		chrome++
 	}
@@ -591,12 +594,12 @@ func (m model) listLines(rows, width int, common map[string]bool) []string {
 }
 
 func (m model) viewBrowser() string {
-	label := ""
-	if m.session != nil {
-		label = m.session.Bookmark.Label()
-	}
-
 	var lines []string
+
+	// The status row comes and goes (see statusText), which changes how many
+	// listing rows fit; re-clamp this frame's copy so the cursor stays in view.
+	m.clampScroll()
+	m.clampLocalScroll()
 
 	// Compute the comparison common-name set once per frame and thread it through
 	// the listing helpers, rather than rebuilding it in each of them.
@@ -606,7 +609,7 @@ func (m model) viewBrowser() string {
 	if m.localActive {
 		body = m.browserColumns(common)
 	} else {
-		breadcrumb := m.sectionLabel(focusFiles, "remote") + dimStyle.Render(" "+m.cwd) + searchSuffix(m.searchActive, m.searchInput.Value())
+		breadcrumb := m.sectionLabel(focusFiles, m.remoteName()) + dimStyle.Render(" "+m.cwd) + searchSuffix(m.searchActive, m.searchInput.Value())
 		body = append([]string{breadcrumb, ""}, m.listLines(m.visibleRows(), max(m.width, 1), common)...)
 	}
 	if m.destActive {
@@ -614,26 +617,9 @@ func (m model) viewBrowser() string {
 	}
 	lines = append(lines, body...)
 
-	// With the tips footer off, the status row is the only always-visible line
-	// left to advertise the `?` toggle, so the hint sits in its left slot until
-	// there is something more useful to say there.
-	status := ""
-	if !m.showHelp {
-		status = keysHint
+	if status := m.statusText(); status != "" {
+		lines = append(lines, dimStyle.Render(status))
 	}
-	if n := len(m.selected); n > 0 {
-		status = fmt.Sprintf("%d selected", n)
-	}
-	if m.err != nil && !m.destActive {
-		status = errStyle.Render("error: ") + m.err.Error()
-	}
-	// The connection (bookmark) sits at the far right of the status row: always
-	// visible but clear of the path, listing, and shortcut keys.
-	conn := ""
-	if label != "" {
-		conn = dimStyle.Render("rtr — ") + connStyle.Render(label)
-	}
-	lines = append(lines, spread(dimStyle.Render(status), conn, max(m.width, 1)))
 
 	if panel := m.transfersView(); panel != "" {
 		lines = append(lines, dividerLine(m.width)) // separate files from transfers
@@ -658,6 +644,28 @@ func (m model) viewBrowser() string {
 		lines = append(lines, helpStyle.Render(help))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// remoteName heads the remote pane: the connected bookmark's label (its name,
+// or user@host), falling back to "remote" before a session exists.
+func (m model) remoteName() string {
+	if m.session != nil {
+		return m.session.Bookmark.Label()
+	}
+	return "remote"
+}
+
+// statusText is the browser's status row: the selection count, or an error
+// (which takes precedence). Empty means the row is omitted and the listing
+// gets it back.
+func (m model) statusText() string {
+	if m.err != nil && !m.destActive {
+		return errStyle.Render("error: ") + m.err.Error()
+	}
+	if n := len(m.selected); n > 0 {
+		return fmt.Sprintf("%d selected", n)
+	}
+	return ""
 }
 
 // searchSuffix renders an accepted (non-active) filter as a breadcrumb suffix,

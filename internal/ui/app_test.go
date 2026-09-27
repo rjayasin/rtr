@@ -1329,10 +1329,10 @@ func TestHelpToggle(t *testing.T) {
 	if strings.Contains(ansi.Strip(m.viewBrowser()), "q quit") {
 		t.Error("footer should not render while help is off")
 	}
-	// The hidden footer leaves the `?` toggle to the status row (browser) and a
-	// standalone line (bookmarks), so it stays discoverable.
-	if !strings.Contains(ansi.Strip(m.viewBrowser()), keysHint) {
-		t.Error("browser status row should hint at ? while help is off")
+	// The hidden footer leaves the `?` toggle to a standalone line on the
+	// bookmarks screen only; the browser stays uncluttered.
+	if strings.Contains(ansi.Strip(m.viewBrowser()), keysHint) {
+		t.Error("browser should not hint at ? (bookmarks screen only)")
 	}
 	if !strings.Contains(ansi.Strip(m.viewBookmarks()), keysHint) {
 		t.Error("bookmarks should hint at ? while help is off")
@@ -1346,7 +1346,7 @@ func TestHelpToggle(t *testing.T) {
 	if !strings.Contains(ansi.Strip(m.viewBrowser()), "q quit") {
 		t.Error("footer should render while help is on")
 	}
-	if strings.Contains(ansi.Strip(m.viewBrowser()), keysHint) {
+	if strings.Contains(ansi.Strip(m.viewBookmarks()), keysHint) {
 		t.Error("the ? hint should give way to the footer it stands in for")
 	}
 	if got := m.visibleRows(); got != rowsWithoutHelp-1 {
@@ -1388,5 +1388,47 @@ func TestShiftTabCyclesBackwards(t *testing.T) {
 	back()
 	if m.focus != focusFiles {
 		t.Fatalf("focus = %v, want files", m.focus)
+	}
+}
+
+// The remote pane is headed by the connected bookmark's label rather than a
+// generic "remote", and the status row only appears when it has something to
+// say (a selection count or an error).
+func TestRemotePaneNamedForConnection(t *testing.T) {
+	m := testModel()
+	m.screen = screenBrowser
+	m.session = &sshx.Session{Bookmark: config.Bookmark{Host: "h", User: "me"}}
+	m.cwd = "/volume1"
+	m.entries = []sshx.Entry{{Name: "file.txt", Path: "/volume1/file.txt", Size: 4096}}
+
+	lines := strings.Split(ansi.Strip(m.viewBrowser()), "\n")
+	if !strings.HasPrefix(strings.TrimSpace(lines[0]), "me@h") {
+		t.Errorf("remote heading %q should name the connection", lines[0])
+	}
+	view := ansi.Strip(m.viewBrowser())
+	if strings.Contains(view, "remote") || strings.Contains(view, "rtr — ") {
+		t.Errorf("connection should only appear as the pane heading\n%s", view)
+	}
+	if len(lines) != m.height {
+		t.Errorf("view is %d lines, want %d", len(lines), m.height)
+	}
+	rowsIdle := m.visibleRows()
+
+	m.selected = map[string]bool{"/volume1/file.txt": true}
+	if got := m.visibleRows(); got != rowsIdle-1 {
+		t.Errorf("visibleRows = %d, want %d (status row takes a row)", got, rowsIdle-1)
+	}
+	lines = strings.Split(ansi.Strip(m.viewBrowser()), "\n")
+	if len(lines) != m.height {
+		t.Errorf("view is %d lines, want %d with a status row", len(lines), m.height)
+	}
+	if last := strings.TrimSpace(lines[len(lines)-1]); last != "1 selected" {
+		t.Errorf("bottom line = %q, want the status row", last)
+	}
+
+	// The split view heads its remote column the same way.
+	m.localActive = true
+	if v := ansi.Strip(m.viewBrowser()); !strings.Contains(strings.Split(v, "\n")[0], "me@h") {
+		t.Errorf("split view remote heading should name the connection\n%s", v)
 	}
 }

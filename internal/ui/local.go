@@ -314,7 +314,7 @@ func (m model) browserColumns(common map[string]bool) []string {
 		rw = 12
 	}
 
-	remoteHead := m.sectionLabel(focusFiles, "remote") + dimStyle.Render(" "+m.cwd) + searchSuffix(m.searchActive, m.searchInput.Value())
+	remoteHead := m.sectionLabel(focusFiles, m.remoteName()) + dimStyle.Render(" "+m.cwd) + searchSuffix(m.searchActive, m.searchInput.Value())
 	localHead := m.sectionLabel(focusLocal, "local") + dimStyle.Render(" "+m.localCwd) + searchSuffix(m.localSearchActive, m.localSearchInput.Value())
 	left := append([]string{remoteHead, ""}, m.listLines(rows, lw, common)...)
 	right := append([]string{localHead, ""}, m.localListLines(rows, rw, common)...)
