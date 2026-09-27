@@ -36,6 +36,11 @@ lint:
 fmt:
 	gofmt -w .
 
+## screenshot: re-render docs/screenshot.png from fabricated data (needs Chrome)
+.PHONY: screenshot
+screenshot:
+	./docs/screenshot.sh
+
 ## install: install rtr to GOBIN/PATH
 .PHONY: install
 install:

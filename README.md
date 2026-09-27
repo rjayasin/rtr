@@ -2,31 +2,7 @@
 
 [![CI](https://github.com/rjayasin/rtr/actions/workflows/ci.yml/badge.svg)](https://github.com/rjayasin/rtr/actions/workflows/ci.yml)
 
-```text
- remote /srv/files                                │ local: ~/Downloads                          
-                                                  │                                             
-   [ ] backups/                                   │   project-backup/                           
-   [x] ubuntu-24.04.2-desktop-amd64.iso      5.7G │   report-final.pdf                    248.0K
- ➤ [x] screen-recording.mp4                  4.2G │   screenshot.png                        1.2M
-                                                                                                
-                             ╭────────────────────────────────────╮
-                             │ Download 2 items • 9.9G            │
-                             │ ubuntu-24.04.2-desktop-amd64.iso   │
-                             │ screen-recording.mp4               │
-                             │                                    │
-                             │ Save to:                           │
-                             │ ~/Downloads                        │
-                             │                                    │
-                             │ enter start • esc cancel           │
-                             ╰────────────────────────────────────╯
-                                                                                                
- 2 selected                                                                            rtr — nas
- ───────────────────────────────────────────────────────────────────────────────────────────────
- transfers (2 active)
-   ↓ archlinux-2024.04.01-x86_64.iso  ████████░░░░░  62%   18MB/s ETA 0:42
-   ↑ site-backup.tar.zst              ███░░░░░░░░░░  24%  9.1MB/s ETA 1:55
- ↑/↓ move • → open • ← up • x/space select • / search • l local • enter download • t/n sort:newest • . hidden • a all • c clear • r refresh • esc back • ~ compare • tab panes
-```
+![rtr browsing a NAS with the local pane open and transfers running](docs/screenshot.png)
 
 A terminal UI for moving files over SSH. Bookmark hosts, browse them over SFTP,
 and pull files down or push them back up with `rsync` (the command and its flags
@@ -121,6 +97,7 @@ make          # compile and launch rtr
 make test     # run the test suite
 make vet      # run go vet
 make fmt      # format all Go sources
+make screenshot  # re-render docs/screenshot.png (fabricated data; needs Chrome)
 ```
 
 ### Releases
