@@ -413,7 +413,7 @@ func (m model) transfersView() string {
 		if x.upload {
 			dir = dimStyle.Render("↑ ")
 		}
-		name := padRight(truncate(x.label, nw), nw)
+		name := padRight(truncateMiddle(x.label, nw), nw)
 		var right string
 		switch {
 		case x.cancelled:
@@ -545,7 +545,7 @@ func (m model) destPopover() string {
 	}
 	contentW := clamp(textW, 26, max(m.width-4, 26))
 	for i, n := range names {
-		names[i] = dimStyle.Render(truncate(n, contentW))
+		names[i] = dimStyle.Render(truncateMiddle(n, contentW))
 	}
 
 	rows := append([]string{title}, names...)

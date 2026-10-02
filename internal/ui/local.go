@@ -334,7 +334,22 @@ func listRow(width int, prefix, name, size string) string {
 	if avail < 1 {
 		avail = 1
 	}
-	return spread(prefix+ansi.Truncate(name, avail, "…"), size, width)
+	return spread(prefix+truncateMiddle(name, avail), size, width)
+}
+
+// truncateMiddle shortens s to width w (ANSI-aware) the way Finder does: the
+// start and end of the name are kept and the middle is replaced with "…", so
+// extensions and trailing version numbers stay visible.
+func truncateMiddle(s string, w int) string {
+	if ansi.StringWidth(s) <= w {
+		return s
+	}
+	if w <= 1 {
+		return ansi.Truncate(s, w, "")
+	}
+	head := (w - 1) / 2
+	tail := w - 1 - head
+	return ansi.Truncate(s, head, "") + "…" + ansi.TruncateLeft(s, ansi.StringWidth(s)-tail, "")
 }
 
 // fitLine truncates s to width w (ANSI-aware, with an ellipsis) and pads it with

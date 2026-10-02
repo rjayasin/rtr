@@ -1432,3 +1432,31 @@ func TestRemotePaneNamedForConnection(t *testing.T) {
 		t.Errorf("split view remote heading should name the connection\n%s", v)
 	}
 }
+
+// Long names are shortened in the middle, Finder-style, so the extension and
+// any trailing version or index stay visible.
+func TestTruncateMiddle(t *testing.T) {
+	cases := []struct {
+		in   string
+		w    int
+		want string
+	}{
+		{"short.txt", 20, "short.txt"},
+		{"holiday-photos-2024-final.tar.gz", 15, "holiday….tar.gz"},
+		{"abcdefghij", 5, "ab…ij"},
+		{"abcdefghij", 1, "a"},
+	}
+	for _, c := range cases {
+		if got := truncateMiddle(c.in, c.w); got != c.want {
+			t.Errorf("truncateMiddle(%q, %d) = %q, want %q", c.in, c.w, got, c.want)
+		}
+	}
+	styled := dirStyle.Render("a-very-long-directory-name/")
+	got := truncateMiddle(styled, 11)
+	if plain := ansi.Strip(got); plain != "a-ver…name/" {
+		t.Errorf("styled truncation = %q, want %q", plain, "a-ver…name/")
+	}
+	if w := ansi.StringWidth(got); w != 11 {
+		t.Errorf("styled truncation width = %d, want 11", w)
+	}
+}
