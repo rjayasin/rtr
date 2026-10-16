@@ -88,6 +88,14 @@ func (m model) updateLocalFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.localSort = sortNameAsc
 		}
 		m.resortLocal()
+	case "s":
+		// Sort by size; pressing s again flips largest/smallest.
+		if m.localSort == sortSizeDesc {
+			m.localSort = sortSizeAsc
+		} else {
+			m.localSort = sortSizeDesc
+		}
+		m.resortLocal()
 	case ".":
 		// Toggle dot-file visibility (shared with the remote pane); start from the
 		// top since the visible set changes.
@@ -262,7 +270,9 @@ func readLocalDir(dir string) ([]localEntry, error) {
 func sortLocalEntries(entries []localEntry, mode sortMode) {
 	sortByMode(entries, mode,
 		func(e localEntry) string { return e.name },
-		func(e localEntry) time.Time { return e.modTime })
+		func(e localEntry) time.Time { return e.modTime },
+		func(e localEntry) int64 { return e.size },
+		func(e localEntry) bool { return e.isDir })
 }
 
 // localListLines renders exactly rows lines of the local listing (padded with

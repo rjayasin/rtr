@@ -17,9 +17,11 @@ import (
 	"github.com/rjayasin/rtr/internal/util"
 )
 
-// sortMode is the remote listing order. `t` cycles the time modes and `n`
-// cycles the name modes (each press flips direction). Directories and files
-// are interspersed (sorted together by the key, not grouped by type).
+// sortMode is the remote listing order. `t` cycles the time modes, `n` the
+// name modes and `s` the size modes (each press flips direction). For time and
+// name, directories and files are interspersed (sorted together by the key, not
+// grouped by type); directories have no listed size, so the size modes put them
+// after the files.
 type sortMode int
 
 const (
@@ -27,6 +29,8 @@ const (
 	sortTimeAsc                  // oldest-modified first
 	sortNameAsc                  // A → Z
 	sortNameDesc                 // Z → A
+	sortSizeDesc                 // largest first
+	sortSizeAsc                  // smallest first
 )
 
 func (s sortMode) String() string {
@@ -37,19 +41,36 @@ func (s sortMode) String() string {
 		return "oldest"
 	case sortNameDesc:
 		return "name ↓"
+	case sortSizeDesc:
+		return "largest"
+	case sortSizeAsc:
+		return "smallest"
 	default:
 		return "name ↑"
 	}
 }
 
 // sortByMode orders entries in place by the chosen key, with directories and
-// files interspersed (name is the tie-break for the time modes). name and mod
-// extract the sort keys, letting the remote and local panes share one impl.
-func sortByMode[T any](entries []T, mode sortMode, name func(T) string, mod func(T) time.Time) {
+// files interspersed for time and name, and directories (A→Z) after the files
+// for size. Name is the tie-break for the time and size modes. name, mod, size
+// and isDir extract the sort keys, letting the remote and local panes share one
+// impl.
+func sortByMode[T any](entries []T, mode sortMode, name func(T) string, mod func(T) time.Time, size func(T) int64, isDir func(T) bool) {
 	sort.SliceStable(entries, func(i, j int) bool {
 		a, b := entries[i], entries[j]
 		na, nb := strings.ToLower(name(a)), strings.ToLower(name(b))
 		switch mode {
+		case sortSizeDesc, sortSizeAsc:
+			if isDir(a) != isDir(b) {
+				return !isDir(a) // files first, in either direction
+			}
+			if !isDir(a) && size(a) != size(b) {
+				if mode == sortSizeDesc {
+					return size(a) > size(b) // largest first
+				}
+				return size(a) < size(b) // smallest first
+			}
+			return na < nb
 		case sortTimeDesc:
 			if !mod(a).Equal(mod(b)) {
 				return mod(a).After(mod(b)) // newest first
@@ -72,7 +93,9 @@ func sortByMode[T any](entries []T, mode sortMode, name func(T) string, mod func
 func sortEntries(entries []sshx.Entry, mode sortMode) {
 	sortByMode(entries, mode,
 		func(e sshx.Entry) string { return e.Name },
-		func(e sshx.Entry) time.Time { return e.ModTime })
+		func(e sshx.Entry) time.Time { return e.ModTime },
+		func(e sshx.Entry) int64 { return e.Size },
+		func(e sshx.Entry) bool { return e.IsDir })
 }
 
 // filterByName drops dot files (unless showHidden) and narrows to a
@@ -192,6 +215,14 @@ func (m model) updateFileFocus(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.sortMode = sortNameDesc
 		} else {
 			m.sortMode = sortNameAsc
+		}
+		m.resort()
+	case "s":
+		// Sort by size; pressing s again flips largest/smallest.
+		if m.sortMode == sortSizeDesc {
+			m.sortMode = sortSizeAsc
+		} else {
+			m.sortMode = sortSizeDesc
 		}
 		m.resort()
 	case ".":
@@ -635,7 +666,7 @@ func (m model) viewBrowser() string {
 	}
 	if m.showHelp {
 		browserHelp := fmt.Sprintf(
-			"↑/↓ move • → open • ← up • x/space select • / search • l local • enter download • t/n sort:%s%s • a all • c clear • r refresh • esc back",
+			"↑/↓ move • → open • ← up • x/space select • / search • l local • enter download • t/n/s sort:%s%s • a all • c clear • r refresh • esc back",
 			m.sortMode, m.hiddenHint())
 		help := m.footer(browserHelp)
 		if m.searchActive || m.localSearchActive {
@@ -692,7 +723,7 @@ func (m model) footer(baseHelp string) string {
 	case focusTransfers:
 		return "↑/↓ select • c cancel • x clear done • tab/esc files • q quit"
 	case focusLocal:
-		return fmt.Sprintf("↑/↓ move • → open • ← up • enter upload • / search • t/n sort:%s%s%s • r refresh • l/esc close • tab remote • q quit", m.localSort, m.hiddenHint(), m.compareHint())
+		return fmt.Sprintf("↑/↓ move • → open • ← up • enter upload • / search • t/n/s sort:%s%s%s • r refresh • l/esc close • tab remote • q quit", m.localSort, m.hiddenHint(), m.compareHint())
 	}
 	switch {
 	case m.localActive && len(m.transfers) > 0:

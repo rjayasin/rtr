@@ -408,6 +408,10 @@ func TestSortEntries(t *testing.T) {
 		{"time desc", sortTimeDesc, "zdir,a.txt,b.txt,adir,c.txt"},
 		// time ascending: oldest→newest.
 		{"time asc", sortTimeAsc, "c.txt,adir,b.txt,a.txt,zdir"},
+		// size descending: largest file first, then directories A→Z.
+		{"size desc", sortSizeDesc, "b.txt,c.txt,a.txt,adir,zdir"},
+		// size ascending: smallest file first, directories still last.
+		{"size asc", sortSizeAsc, "a.txt,c.txt,b.txt,adir,zdir"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -450,9 +454,17 @@ func TestSortShortcuts(t *testing.T) {
 	if m.sortMode != sortNameDesc {
 		t.Errorf("after second n, mode = %v, want name desc", m.sortMode)
 	}
+	press("s") // switch to size → largest first
+	if m.sortMode != sortSizeDesc {
+		t.Errorf("after s, mode = %v, want size desc", m.sortMode)
+	}
+	press("s") // flip to smallest first
+	if m.sortMode != sortSizeAsc {
+		t.Errorf("after second s, mode = %v, want size asc", m.sortMode)
+	}
 	press("t") // switch back to time → newest-first
 	if m.sortMode != sortTimeDesc {
-		t.Errorf("after t from name, mode = %v, want time desc", m.sortMode)
+		t.Errorf("after t from size, mode = %v, want time desc", m.sortMode)
 	}
 }
 
@@ -897,13 +909,14 @@ func TestLocalPane(t *testing.T) {
 	}
 }
 
-// The local pane supports the same t/n sorting as the remote pane: t toggles
-// time newest/oldest, n toggles name A→Z / Z→A, defaulting to newest-first.
+// The local pane supports the same t/n/s sorting as the remote pane: t toggles
+// time newest/oldest, n toggles name A→Z / Z→A, s toggles largest/smallest,
+// defaulting to newest-first.
 func TestLocalPaneSorting(t *testing.T) {
 	dir := t.TempDir()
-	mk := func(name string, age time.Duration) {
+	mk := func(name string, age time.Duration, size int) {
 		p := filepath.Join(dir, name)
-		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+		if err := os.WriteFile(p, []byte(strings.Repeat("x", size)), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		mt := time.Now().Add(-age)
@@ -911,9 +924,9 @@ func TestLocalPaneSorting(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	mk("a.txt", 1*time.Hour) // middle age
-	mk("b.txt", 0)           // newest
-	mk("c.txt", 2*time.Hour) // oldest
+	mk("a.txt", 1*time.Hour, 3) // middle age, largest
+	mk("b.txt", 0, 1)           // newest, smallest
+	mk("c.txt", 2*time.Hour, 2) // oldest
 
 	names := func(m model) string {
 		var n []string
@@ -950,6 +963,18 @@ func TestLocalPaneSorting(t *testing.T) {
 	m = updated.(model)
 	if got := names(m); got != "c.txt,b.txt,a.txt" {
 		t.Errorf("after second n order = %q, want c.txt,b.txt,a.txt", got)
+	}
+	// s switches to size, largest first.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	m = updated.(model)
+	if got := names(m); got != "a.txt,c.txt,b.txt" {
+		t.Errorf("after s order = %q, want a.txt,c.txt,b.txt", got)
+	}
+	// s again flips to smallest first.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	m = updated.(model)
+	if got := names(m); got != "b.txt,c.txt,a.txt" {
+		t.Errorf("after second s order = %q, want b.txt,c.txt,a.txt", got)
 	}
 }
 
