@@ -11,6 +11,19 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
+// localHostName is this machine's hostname with any domain dropped (so
+// "rMBP.local" heads the pane as "rMBP"), falling back to "local".
+func localHostName() string {
+	h, err := os.Hostname()
+	if err != nil || h == "" {
+		return "local"
+	}
+	if i := strings.IndexByte(h, '.'); i > 0 {
+		h = h[:i]
+	}
+	return h
+}
+
 // localEntry is one item in the local file pane's listing.
 type localEntry struct {
 	name    string
@@ -342,7 +355,7 @@ func (m model) browserColumns(common map[string]bool) []string {
 	}
 
 	remoteHead := m.sectionLabel(focusFiles, m.remoteName()) + dimStyle.Render(" "+m.cwd) + searchSuffix(m.searchActive, m.searchInput.Value())
-	localHead := m.sectionLabel(focusLocal, "local") + dimStyle.Render(" "+m.localCwd) + searchSuffix(m.localSearchActive, m.localSearchInput.Value())
+	localHead := m.sectionLabel(focusLocal, m.localName) + dimStyle.Render(" "+m.localCwd) + searchSuffix(m.localSearchActive, m.localSearchInput.Value())
 	left := append([]string{remoteHead, ""}, m.listLines(rows, lw, common)...)
 	right := append([]string{localHead, ""}, m.localListLines(rows, rw, common)...)
 

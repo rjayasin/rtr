@@ -79,6 +79,7 @@ func TestScreenshot(t *testing.T) {
 	m.brCursor = 2
 
 	m.localActive = true
+	m.localName = "laptop"
 	m.localCwd = "~/Downloads"
 	m.localEntries = []localEntry{
 		{name: "project-backup", isDir: true, modTime: ago(3 * time.Hour)},

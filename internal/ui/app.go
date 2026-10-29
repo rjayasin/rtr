@@ -82,6 +82,7 @@ type model struct {
 	// directory rtr was launched from, shown split to the right of the remote list
 	localActive       bool
 	localCwd          string
+	localName         string // heads the local pane: this machine's short hostname
 	localEntries      []localEntry
 	localCursor       int
 	localOffset       int
@@ -155,6 +156,7 @@ func New(cfg *config.Config, version string) model {
 		selected:         map[string]bool{},
 		scrollMem:        map[string]int{},
 		localScrollMem:   map[string]int{},
+		localName:        localHostName(),
 		spinner:          sp,
 		destInput:        di,
 		searchInput:      si,
