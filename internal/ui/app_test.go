@@ -901,6 +901,16 @@ func TestLocalPane(t *testing.T) {
 		t.Errorf("→ should descend into sub, got %q", m.localCwd)
 	}
 
+	// ← steps back up and lands the cursor on "sub", the directory we came from.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	m = updated.(model)
+	if m.localCwd != dir {
+		t.Fatalf("← should return to %q, got %q", dir, m.localCwd)
+	}
+	if e, ok := m.currentLocal(); !ok || e.name != "sub" {
+		t.Errorf("← should land the cursor on sub, got %+v", e)
+	}
+
 	// l closes the pane and returns focus to remote.
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
 	m = updated.(model)

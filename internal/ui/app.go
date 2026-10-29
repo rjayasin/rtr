@@ -85,6 +85,7 @@ type model struct {
 	localEntries      []localEntry
 	localCursor       int
 	localOffset       int
+	localScrollMem    map[string]int // remembered scroll offset per local directory, like scrollMem
 	localErr          error
 	localSort         sortMode // defaults to sortTimeDesc (newest first), like the remote pane
 	localSearchActive bool
@@ -153,6 +154,7 @@ func New(cfg *config.Config, version string) model {
 		screen:           screenBookmarks,
 		selected:         map[string]bool{},
 		scrollMem:        map[string]int{},
+		localScrollMem:   map[string]int{},
 		spinner:          sp,
 		destInput:        di,
 		searchInput:      si,

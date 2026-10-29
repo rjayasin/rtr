@@ -219,8 +219,25 @@ func (m *model) reloadLocal() {
 }
 
 func (m *model) enterLocalDir(dir string) {
+	prev := m.localCwd
+	if prev != dir {
+		m.localScrollMem[prev] = m.localOffset // remember where we were, to restore on return
+	}
 	m.localCwd = dir
 	m.loadLocal()
+	// When stepping up a level, land the cursor on the directory we came from
+	// and restore the scroll position we had in this directory before.
+	if filepath.Dir(prev) == dir && prev != dir {
+		child := filepath.Base(prev)
+		for i, e := range m.displayedLocalEntries() {
+			if e.name == child {
+				m.localCursor = i
+				break
+			}
+		}
+		m.localOffset = m.localScrollMem[dir]
+		m.clampLocalScroll()
+	}
 }
 
 func (m model) currentLocal() (localEntry, bool) {
