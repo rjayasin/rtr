@@ -849,6 +849,22 @@ func TestUpdateAvailableNotice(t *testing.T) {
 
 // `l` opens a local file pane showing the launch directory; tab cycles focus
 // between remote and local; → descends into a local subdirectory; `l` closes it.
+// Connecting opens the local pane by default, with focus on the remote list.
+func TestLocalPaneOpenOnConnect(t *testing.T) {
+	dir := t.TempDir()
+	m := testModel()
+	m.startDir = dir
+
+	updated, _ := m.Update(connectedMsg{dir: "/"})
+	m = updated.(model)
+	if !m.localActive || m.focus != focusFiles {
+		t.Fatalf("connecting should open the local pane with remote focus (active=%v focus=%v)", m.localActive, m.focus)
+	}
+	if m.localCwd != dir {
+		t.Errorf("local pane cwd = %q, want launch dir %q", m.localCwd, dir)
+	}
+}
+
 func TestLocalPane(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o755); err != nil {

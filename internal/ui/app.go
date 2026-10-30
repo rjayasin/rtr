@@ -461,6 +461,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.connecting = false
 		m.err = nil
 		m.screen = screenBrowser
+		// Open the local pane alongside the remote listing, leaving focus on
+		// the remote files.
+		if !m.localActive {
+			m = m.toggleLocal()
+			m.focus = focusFiles
+		}
 		return m, nil
 
 	case listedMsg:
