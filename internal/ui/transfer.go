@@ -359,26 +359,65 @@ func (m model) remoteCleanupCmd(x *xfer) tea.Cmd {
 	}
 }
 
-// xferNameWidth is the width of the file-name column in the transfers panel. It
-// grows with the window (up to the longest label) so more of the name shows when
-// there is room, while always leaving space for the marker, bar, and stats.
-func (m model) xferNameWidth() int {
-	// reserved: marker(2) + spaces(2) + progress bar + a rate/ETA stats budget.
-	avail := m.width - m.barWidth - 26
-	longest := 0
+// minXferNameW is the narrowest the transfers panel's name column gets.
+const minXferNameW = 12
+
+// minXferBarW is the narrowest the inline transfer bar gets on a cramped
+// window: the percentage label plus a few cells of bar.
+const minXferBarW = barLabelW + 4
+
+// xferLayout sizes the transfers panel's name column and inline progress bar.
+// The rate/ETA stats always get their full width; the bar and the name share
+// what is left. The bar gives up cells (down to minXferBarW, or a quarter of the
+// shared space when that is larger) before the name is truncated, so on a narrow
+// window the name and stats stay readable and only the bar shrinks. With room to
+// spare the bar keeps its full m.barWidth and the name grows to the longest label.
+func (m model) xferLayout() (nameW, barW int) {
+	longest, statsW := 0, 0
 	for _, x := range m.transfers {
-		if w := ansi.StringWidth(x.label); w > longest {
-			longest = w
+		longest = max(longest, ansi.StringWidth(x.label))
+		if !x.done && !x.cancelled {
+			statsW = max(statsW, ansi.StringWidth(m.xferStats(x)))
 		}
 	}
-	w := longest
-	if w > avail {
-		w = avail
+	// marker(2) + direction(2) + space before the bar + space before the stats.
+	room := m.width - 6 - statsW
+	floor := min(max(minXferBarW, room/4), m.barWidth)
+	barW = clamp(room-longest, floor, m.barWidth)
+	nameW = max(min(longest, room-barW), minXferNameW)
+	return nameW, barW
+}
+
+// xferStats is a running transfer's rate/ETA text, shown after its bar. On a
+// narrow window the "ETA" label and the zero hours are dropped ("0:42" rather
+// than "ETA 0:00:42") to leave more room for the name.
+func (m model) xferStats(x *xfer) string {
+	var parts []string
+	if x.rate != "" {
+		parts = append(parts, x.rate)
 	}
-	if w < 12 {
-		w = 12
+	if x.eta != "" {
+		if m.narrow() {
+			parts = append(parts, compactETA(x.eta))
+		} else {
+			parts = append(parts, "ETA "+x.eta)
+		}
 	}
-	return w
+	return strings.Join(parts, " ")
+}
+
+// compactETA drops rsync's zero hours from an H:MM:SS ETA, and the leading zero
+// of the minutes that leaves: "0:00:42" → "0:42", "0:12:05" → "12:05". ETAs of
+// an hour or more are returned unchanged.
+func compactETA(eta string) string {
+	rest, ok := strings.CutPrefix(eta, "0:")
+	if !ok || strings.Count(rest, ":") != 1 {
+		return eta
+	}
+	if len(rest) > 1 && rest[0] == '0' && rest[1] != ':' {
+		rest = rest[1:]
+	}
+	return rest
 }
 
 // transfersHeight is the number of terminal rows the bottom panel occupies.
@@ -402,7 +441,7 @@ func (m model) transfersView() string {
 	}
 	header := m.sectionLabel(focusTransfers, "transfers") + dimStyle.Render(fmt.Sprintf(" (%d active)", active))
 	rows := []string{header}
-	nw := m.xferNameWidth()
+	nw, bw := m.xferLayout()
 	for i, x := range m.transfers {
 		marker := "  "
 		if m.focus == focusTransfers && i == m.xferCursor {
@@ -428,19 +467,18 @@ func (m model) transfersView() string {
 			right = okStyle.Render("✓") + " " + dimStyle.Render("→ "+x.dest+x.doneStats())
 		default:
 			// The bar renders its own percentage; only append rate/ETA.
-			var parts []string
-			if x.rate != "" {
-				parts = append(parts, x.rate)
-			}
-			if x.eta != "" {
-				parts = append(parts, "ETA "+x.eta)
-			}
-			right = renderBar(m.barWidth, x.pct)
-			if len(parts) > 0 {
-				right += " " + dimStyle.Render(strings.Join(parts, " "))
+			right = renderBar(bw, x.pct)
+			if stats := m.xferStats(x); stats != "" {
+				right += " " + dimStyle.Render(stats)
 			}
 		}
-		rows = append(rows, marker+dir+name+" "+right)
+		row := marker + dir + name + " " + right
+		if m.width > 0 {
+			// Finished rows carry a destination and stats that can outrun a
+			// narrow window; end them with an ellipsis rather than a hard cut.
+			row = ansi.Truncate(row, m.width, "…")
+		}
+		rows = append(rows, row)
 	}
 	return strings.Join(rows, "\n")
 }

@@ -462,8 +462,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		m.screen = screenBrowser
 		// Open the local pane alongside the remote listing, leaving focus on
-		// the remote files.
-		if !m.localActive {
+		// the remote files — unless the window is too narrow for a useful split
+		// (e.g. a phone), where `l` still opens it on demand.
+		if !m.localActive && !m.narrow() {
 			m = m.toggleLocal()
 			m.focus = focusFiles
 		}
@@ -695,6 +696,17 @@ func Run(cfg *config.Config, version string) error {
 	p := tea.NewProgram(New(cfg, version), tea.WithAltScreen())
 	_, err := p.Run()
 	return err
+}
+
+// narrowWidth is the window width below which rtr lays out for a small screen
+// (a phone, say): the local pane starts closed and the transfers panel trades
+// progress-bar length for file names and stats.
+const narrowWidth = 80
+
+// narrow reports whether the window is narrower than narrowWidth. An unknown
+// width (no size message yet) is treated as wide.
+func (m model) narrow() bool {
+	return m.width > 0 && m.width < narrowWidth
 }
 
 func clamp(v, lo, hi int) int {

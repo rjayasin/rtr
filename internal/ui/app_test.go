@@ -865,6 +865,25 @@ func TestLocalPaneOpenOnConnect(t *testing.T) {
 	}
 }
 
+// On a narrow window (a phone) connecting leaves the local pane closed, since a
+// side-by-side split would leave each listing too thin to read; `l` still opens it.
+func TestLocalPaneClosedOnNarrowConnect(t *testing.T) {
+	m := testModel()
+	m.startDir = t.TempDir()
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 49, Height: 45})
+	m = updated.(model)
+
+	updated, _ = m.Update(connectedMsg{dir: "/"})
+	m = updated.(model)
+	if m.localActive || m.focus != focusFiles {
+		t.Fatalf("narrow connect should leave the local pane closed (active=%v focus=%v)", m.localActive, m.focus)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	if !updated.(model).localActive {
+		t.Error("l should still open the local pane on a narrow window")
+	}
+}
+
 func TestLocalPane(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o755); err != nil {
@@ -1508,5 +1527,59 @@ func TestTruncateMiddle(t *testing.T) {
 	}
 	if w := ansi.StringWidth(got); w != 11 {
 		t.Errorf("styled truncation width = %d, want 11", w)
+	}
+}
+
+// On a narrow window the transfers panel shrinks the progress bar so each row
+// fits, keeping the rate and a compact ETA visible and giving the name more room
+// than the minimum.
+func TestTransfersPanelNarrow(t *testing.T) {
+	m := testModel()
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 49, Height: 45})
+	m = updated.(model)
+	m.screen = screenBrowser
+	m.transfers = []*xfer{
+		{label: "archlinux-2026.09.01-x86_64.iso", pct: 62.4, rate: "18.20MB/s", eta: "0:00:42"},
+		{label: "podcast-ep111.flac", done: true, dest: "/a/rather/long/destination/directory", bytes: 598_000_000,
+			startedAt: time.Now().Add(-time.Minute), finishedAt: time.Now()},
+	}
+	rows := strings.Split(m.transfersView(), "\n")[1:]
+	for _, r := range rows {
+		if w := ansi.StringWidth(r); w > 49 {
+			t.Errorf("row %q is %d wide, want <= 49", ansi.Strip(r), w)
+		}
+	}
+	running := ansi.Strip(rows[0])
+	for _, want := range []string{"62.4%", "18.20MB/s 0:42"} {
+		if !strings.Contains(running, want) {
+			t.Errorf("running row %q should contain %q", running, want)
+		}
+	}
+	if nw, bw := m.xferLayout(); nw <= minXferNameW || bw != minXferBarW {
+		t.Errorf("narrow layout name=%d bar=%d, want name > %d and bar %d", nw, bw, minXferNameW, minXferBarW)
+	}
+
+	// A wide window keeps the full bar and the labelled ETA.
+	updated, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 45})
+	m = updated.(model)
+	if _, bw := m.xferLayout(); bw != m.barWidth {
+		t.Errorf("wide bar = %d, want full %d", bw, m.barWidth)
+	}
+	if got := m.xferStats(m.transfers[0]); got != "18.20MB/s ETA 0:00:42" {
+		t.Errorf("wide stats = %q", got)
+	}
+}
+
+func TestCompactETA(t *testing.T) {
+	for in, want := range map[string]string{
+		"0:00:42": "0:42",
+		"0:12:05": "12:05",
+		"0:00:00": "0:00",
+		"1:02:03": "1:02:03",
+		"":        "",
+	} {
+		if got := compactETA(in); got != want {
+			t.Errorf("compactETA(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
