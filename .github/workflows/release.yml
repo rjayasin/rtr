@@ -45,7 +45,11 @@ jobs:
       # decide major vs minor vs patch. If nothing since the last tag warrants a
       # bump (no feat/fix/breaking commits), svu returns the current version
       # unchanged; in that case we force a patch so every push still ships.
+      # setup-go pins GOTOOLCHAIN=local to go.mod's version; svu may need a newer
+      # Go to build, so let this step download one (the build still uses go.mod's).
       - name: Tag next version
+        env:
+          GOTOOLCHAIN: auto
         run: |
           go install github.com/caarlos0/svu/v3@latest
           next=$(svu next)
