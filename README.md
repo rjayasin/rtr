@@ -2,8 +2,8 @@
 
 [![CI](https://github.com/rjayasin/rtr/actions/workflows/ci.yml/badge.svg)](https://github.com/rjayasin/rtr/actions/workflows/ci.yml)
 
-A terminal UI for copying files over SSH. Save hosts as bookmarks, browse them
-over SFTP, and download or upload files with `rsync`. The `rsync` command and its
+A TUI for remote file browsing and rsync transfers. Browse remote hosts over
+SFTP and download or upload files with `rsync`. The `rsync` command and its
 flags are configurable. Transfers run in the background, so you can keep
 browsing while they finish.
 
